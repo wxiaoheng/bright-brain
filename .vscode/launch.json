@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Electron: Attach to Main Process",
+      "type": "node",
+      "request": "attach",
+      "port": 9223,
+      "timeout": 60000,
+      "restart": true,
+      "localRoot": "${workspaceFolder}",
+      "remoteRoot": "${workspaceFolder}",
+      "protocol": "inspector"
+    },
+    {
+      "name": "Electron: Attach to Renderer",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}",
+      "timeout": 60000,
+      "url": "http://localhost:5173",
+      "timeout": 60000
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Electron: Debug All",
+      "configurations": ["Electron: Attach to Main Process", "Electron: Attach to Renderer"],
+      "preLaunchTask": "dev: vite",
+      "stopAll": true,
+      "presentation": {
+        "hidden": false,
+        "group": "1",
+        "order": 1
+      }
+    }
+  ]
+}
