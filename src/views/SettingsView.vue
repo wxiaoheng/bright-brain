@@ -24,15 +24,15 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <label>请求端点</label>
-            <p class="description">请求端点BaseUrl,支持openAI、千问、智谱AI等模型</p>
+            <label>模型服务</label>
+            <p class="description">大模型服务提供方,如openAI、千问、智谱AI等模型</p>
           </div>
-          <input
-            v-model="settings.baseUrl"
-            type="text"
-            placeholder="请输入请求端点BaseUrl"
-            @blur="saveSettings"
-          />
+          <select v-model="settings.modelProvider" @change="saveSettings">
+            <option :value="zp">智谱AI</option>
+            <option :value="qw">阿里千问</option>
+            <option :value="ds">DeepSeek</option>
+            <option :value="openAI">OpenAI</option>
+          </select>
         </div>
 
         <div class="setting-item">
@@ -85,9 +85,14 @@
 import { ref, onMounted } from 'vue'
 import { useTheme, setTheme } from '../services/useTheme'
 
+const zp = 'zhipuAI';
+const qw = 'qianwen';
+const ds = 'deepseek';
+const openAI = 'openAI';
+
 interface Settings {
   theme: string
-  baseUrl: string
+  modelProvider: string
   apiKey: string
   model: string
   searchVector: string
@@ -96,7 +101,7 @@ interface Settings {
 
 const defaultSettings: Settings = {
   theme: 'light',
-  baseUrl: '',
+  modelProvider: 'zp',
   apiKey: '',
   model: '',
   searchVector: 'google',
@@ -104,13 +109,18 @@ const defaultSettings: Settings = {
 }
 
 const settings = ref<Settings>({ ...defaultSettings })
+const oldSettings = ref<Settings>({ ...defaultSettings })
 
 const loadSettings = async () => {
   try {
     const response = await window.electronAPI.settings.get()
     if (response.success && response.settings) {
+      if (response.settings.topN){
+        // 数据库查过来是string类型，需要转换成number
+        response.settings.topN = Number.parseInt(response.settings.topN)
+      }
       settings.value = { ...defaultSettings, ...response.settings }
-      
+      oldSettings.value = { ...defaultSettings, ...response.settings }
       // 同步主题
       if (settings.value.theme) {
         setTheme(settings.value.theme as any)
@@ -123,21 +133,28 @@ const loadSettings = async () => {
 
 const saveSettings = async () => {
   try {
-    const settingsToSave = {
-      theme: settings.value.theme,
-      baseUrl: settings.value.baseUrl,
-      apiKey: settings.value.apiKey,
-      model: settings.value.model,
-      searchVector: settings.value.searchVector,
-      topN: settings.value.topN,
+    if (oldSettings.value.theme != settings.value.theme){
+      await window.electronAPI.settings.save('theme', settings.value.theme)
+      // 应用主题
+      if (settings.value.theme) {
+        setTheme(settings.value.theme as any)
+      }
     }
-    console.log('Settings to save:', settingsToSave)
-    const result = await window.electronAPI.settings.save(settingsToSave)
-    console.log('Save result:', result)
-    
-    // 应用主题
-    if (settings.value.theme) {
-      setTheme(settings.value.theme as any)
+    if (oldSettings.value.modelProvider != settings.value.modelProvider){
+      await window.electronAPI.settings.save('modelProvider', settings.value.modelProvider)
+    }
+    if (oldSettings.value.apiKey != settings.value.apiKey){
+      await window.electronAPI.settings.save('apiKey', settings.value.apiKey)
+    }
+    if (oldSettings.value.model != settings.value.model){
+      await window.electronAPI.settings.save('model', settings.value.model)
+    }
+    if (oldSettings.value.searchVector != settings.value.searchVector){
+      await window.electronAPI.settings.save('searchVector', settings.value.searchVector)
+    }
+    if (oldSettings.value.topN != settings.value.topN){
+      // 转换成string
+      await window.electronAPI.settings.save('topN', settings.value.topN+'')
     }
   } catch (error) {
     console.error('Failed to save settings:', error)

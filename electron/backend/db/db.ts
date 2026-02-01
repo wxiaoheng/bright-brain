@@ -1,0 +1,43 @@
+// import Database from 'better-sqlite3';
+import { app } from 'electron';
+import * as path from 'path';
+import * as fs from 'fs';
+
+const Database = require('better-sqlite3');
+
+let appPath = app.getAppPath();
+if (fs.statSync(appPath).isFile()){
+    appPath = path.dirname(appPath);
+}
+// 1.db文件存储目录
+const dbPath = path.join(appPath, 'db');
+if (!fs.existsSync(dbPath)){
+    fs.mkdirSync(dbPath);
+}
+// 2. 初始化数据库连接
+const db = new Database(path.join(dbPath, 'bright-brain.db'), { verbose: console.log });
+db.pragma('journal_mode = WAL'); // 开启 WAL 模式，提高并发读写性能
+
+export function getDb(){
+    return db;
+}
+
+export function createTable(createSql:string){
+    db.exec(createSql);
+}
+
+export function saveOrUpdate(sql:string, ...params: any[]){
+    const statement = db.prepare(sql);
+    statement.run(params);
+}
+
+export function queryItem(sql:string, ...params:any[]){
+    const stmt = db.prepare(sql);
+    const row = stmt.get(params);
+    return row ? row : null;
+}
+
+export function queryItems(sql:string, ...params:any[]){
+    const stmt = db.prepare(sql);
+    return stmt.all(params);
+}

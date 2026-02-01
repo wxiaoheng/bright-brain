@@ -35,21 +35,9 @@
             ×
           </button>
         </div>
-        <div class="session-summary">{{ session.summary }}</div>
         <div class="session-meta">
           <span class="session-date">{{ formatTime(session.updatedAt) }}</span>
           <span class="session-count">{{ session.messages.length }} messages</span>
-        </div>
-        <div class="session-events">
-          <div
-            v-for="event in session.events.slice(-2)"
-            :key="event.id"
-            class="event-item"
-          >
-            <span class="event-dot"></span>
-            <span class="event-text">{{ event.description }}</span>
-            <span class="event-time">{{ formatEventTime(event.timestamp) }}</span>
-          </div>
         </div>
       </div>
     </div>
@@ -92,13 +80,6 @@ const formatTime = (timestamp: number) => {
   })
 }
 
-const formatEventTime = (timestamp: number) => {
-  const date = new Date(timestamp)
-  return date.toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 const handleSearch = () => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -110,9 +91,8 @@ const handleSearch = () => {
 
   filteredSessions.value = sessions.value.filter(session => {
     return (
-      session.title.toLowerCase().includes(query) ||
-      session.summary.toLowerCase().includes(query) ||
-      session.messages.some(msg => msg.content.toLowerCase().includes(query))
+      session.title.toLowerCase().includes(query) 
+      // || session.messages.some(msg => msg.content.toLowerCase().includes(query))
     )
   })
 }

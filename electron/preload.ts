@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   chat: {
-    sendMessage: (message: string) => ipcRenderer.invoke('chat:sendMessage', message),
+    sendMessage: (message: string, sessionId?:string) => ipcRenderer.invoke('chat:sendMessage', message, sessionId),
     onStream: (callback: (data: any) => void) => {
       const listener = (_event: any, data: any) => callback(data)
       ipcRenderer.on('chat:stream', listener)
@@ -17,10 +17,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.log('Preload: Calling settings:get')
       return ipcRenderer.invoke('settings:get')
     },
-    save: (settings: any) => {
-      console.log('Preload: Calling settings:save with:', settings)
-      return ipcRenderer.invoke('settings:save', settings)
+    save: (key:string, value:any) => {
+      console.log('Preload: Calling settings:save with:', key, value)
+      return ipcRenderer.invoke('settings:save', key, value)
     },
+
+  },
+  sessions:{
+    get: ()=> {
+      return ipcRenderer.invoke('sessions:get')
+    },
+    delete:(sessionId:string)=>{
+      return ipcRenderer.invoke('sessions:delete', sessionId);
+    }
+  },
+  messages:{
+    get: (sessionId:string)=> {
+      return ipcRenderer.invoke('messages:get', sessionId);
+    }
   },
   window: {
     minimize: () => {

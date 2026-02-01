@@ -7,11 +7,10 @@ export interface Message {
 export interface ChatSession {
   id: string
   title: string
-  summary: string
   messages: Message[]
   createdAt: number
   updatedAt: number
-  events: SessionEvent[]
+  // events: SessionEvent[]
 }
 
 export interface SessionEvent {

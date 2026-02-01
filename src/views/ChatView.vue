@@ -63,8 +63,9 @@ const inputMessage = ref('')
 const isLoading = ref(false)
 const isStreaming = ref(false)
 const messagesContainer = ref<HTMLElement>()
-const textarea = ref<HTMLTextAreaElement>()
 let streamListener: ((event: any, data: any) => void) | null = null
+
+const initMessage = "正在思考..."
 
 const renderMessage = (content: string) => {
   return renderMarkdown(content)
@@ -106,7 +107,7 @@ const sendMessage = async () => {
 
   const thinkingMessage: Message = {
     role: 'assistant',
-    content: '正在思考...',
+    content: initMessage,
     timestamp: Date.now(),
   }
   addMessage(thinkingMessage)
@@ -115,13 +116,13 @@ const sendMessage = async () => {
   await new Promise(resolve => setTimeout(resolve, 500))
 
   try {
-    await window.electronAPI.chat.sendMessage(message)
-  } catch (error) {
+    await window.electronAPI.chat.sendMessage(message, currentSession.value?.id)
+  } catch (error:any) {
     const session = currentSession.value
     if (session && session.messages.length > 0) {
       const lastMessage = session.messages[session.messages.length - 1]
       if (lastMessage.role === 'assistant') {
-        lastMessage.content = 'Sorry, something went wrong. Please try again.'
+        lastMessage.content = error.message
       }
     }
   }
@@ -138,6 +139,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
 }
 
 onMounted(() => {
+  console.log(111);
   initializeSessions()
   scrollToBottom()
 
@@ -147,8 +149,15 @@ onMounted(() => {
       if (session && session.messages.length > 0) {
         const lastMessage = session.messages[session.messages.length - 1]
         if (lastMessage.role === 'assistant') {
+          if (!data.sessionId){
+            session.id = data.sessionId;
+          }
           if (data.chunk !== undefined) {
-            lastMessage.content = data.chunk
+            if (lastMessage.content === initMessage){
+              lastMessage.content = data.chunk
+            }else{
+              lastMessage.content += data.chunk
+            }
           }
           if (data.done) {
             isStreaming.value = false

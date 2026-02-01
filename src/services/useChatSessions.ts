@@ -1,11 +1,12 @@
 import { ref, computed } from 'vue'
-import type { ChatSession, Message, SessionEvent, SessionFilter } from '../types/chat'
+import type { ChatSession, Message} from '../types/chat'
+import {v4 as uuid} from 'uuid';
 
 const sessions = ref<ChatSession[]>([])
 const currentSessionId = ref<string | null>(null)
 
 // 生成唯一ID
-const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2)
+const generateId = () => uuid()
 
 // 创建新会话
 export const createSession = () => {
@@ -13,24 +14,9 @@ export const createSession = () => {
   const newSession: ChatSession = {
     id,
     title: 'New Chat',
-    summary: 'New conversation started',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'Hello! I am Bright Brain, your AI assistant. How can I help you today?',
-        timestamp: Date.now(),
-      },
-    ],
+    messages: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    events: [
-      {
-        id: generateId(),
-        type: 'created',
-        timestamp: Date.now(),
-        description: 'Session created',
-      },
-    ],
   }
 
   sessions.value.unshift(newSession)
@@ -53,15 +39,33 @@ export const useSessions = () => {
 }
 
 // 切换会话
-export const switchSession = (sessionId: string) => {
+export const switchSession = async (sessionId: string) => {
   currentSessionId.value = sessionId
+  const currentSession = useCurrentSession();
+  if (currentSession.value){
+    const result = await window.electronAPI.messages.get(sessionId);
+    if (result.success && Array.isArray(result.messages)){
+      currentSession.value.messages = result.messages.map(value=>{
+        const {role, content, created_at} = value;
+        return {
+          role,
+          content,
+          timestamp: created_at
+        }
+      })
+    }
+  }
 }
 
 // 删除会话
 export const deleteSession = (sessionId: string) => {
   sessions.value = sessions.value.filter(s => s.id !== sessionId)
+  window.electronAPI.sessions.delete(sessionId);
   if (currentSessionId.value === sessionId) {
     currentSessionId.value = sessions.value[0]?.id || null
+    if (currentSessionId.value){
+      switchSession(currentSessionId.value)
+    }
   }
 }
 
@@ -71,12 +75,6 @@ export const updateSessionTitle = (sessionId: string, title: string) => {
   if (session) {
     session.title = title
     session.updatedAt = Date.now()
-    session.events.push({
-      id: generateId(),
-      type: 'updated',
-      timestamp: Date.now(),
-      description: `Title updated to: ${title}`,
-    })
   }
 }
 
@@ -90,23 +88,6 @@ export const addMessage = (message: Message) => {
     // 更新会话标题（如果是第一条用户消息）
     if (message.role === 'user' && session.messages.filter(m => m.role === 'user').length === 1) {
       session.title = message.content.substring(0, 30) + (message.content.length > 30 ? '...' : '')
-      session.events.push({
-        id: generateId(),
-        type: 'updated',
-        timestamp: Date.now(),
-        description: `Title set from first message`,
-      })
-    }
-
-    // 更新摘要（简单的最后一条助手回复）
-    if (message.role === 'assistant') {
-      session.summary = message.content.substring(0, 100) + (message.content.length > 100 ? '...' : '')
-      session.events.push({
-        id: generateId(),
-        type: 'updated',
-        timestamp: Date.now(),
-        description: `Summary updated`,
-      })
     }
   }
 }
@@ -120,9 +101,9 @@ export const searchSessions = (query: string): ChatSession[] => {
   const lowerQuery = query.toLowerCase()
   return sessions.value.filter(session => {
     return (
-      session.title.toLowerCase().includes(lowerQuery) ||
-      session.summary.toLowerCase().includes(lowerQuery) ||
-      session.messages.some(msg => msg.content.toLowerCase().includes(lowerQuery))
+      session.title.toLowerCase().includes(lowerQuery) 
+      // || session.summary.toLowerCase().includes(lowerQuery) 
+      // || session.messages.some(msg => msg.content.toLowerCase().includes(lowerQuery))
     )
   })
 }
@@ -148,12 +129,6 @@ export const clearCurrentSession = () => {
       },
     ]
     session.updatedAt = Date.now()
-    session.events.push({
-      id: generateId(),
-      type: 'updated',
-      timestamp: Date.now(),
-      description: 'Messages cleared',
-    })
   }
 }
 
@@ -162,8 +137,21 @@ export const useCurrentSessionId = () => {
   return currentSessionId
 }
 
-// 初始化：创建第一个会话
-export const initializeSessions = () => {
+// 初始化
+export const initializeSessions = async () => {
+  const results = await window.electronAPI.sessions.get();
+  if (results.success && Array.isArray(results.sessions)){
+    sessions.value = results.sessions.map(value=>{
+      const {id, title, created_at, updated_at} = value;
+      return {
+        id,
+        title,
+        messages:[],
+        createdAt:created_at,
+        updatedAt:updated_at
+      }
+    });
+  }
   if (sessions.value.length === 0) {
     createSession()
   }

@@ -1,6 +1,6 @@
 export interface ElectronAPI {
   chat: {
-    sendMessage: (message: string) => Promise<{ success: boolean; response: string }>
+    sendMessage: (message: string, sessionId?:string) => Promise<{ success: boolean; response: string }>
     onStream: (callback: (data: any) => void) => () => void
   }
   search: {
@@ -8,7 +8,14 @@ export interface ElectronAPI {
   }
   settings: {
     get: () => Promise<{ success: boolean; settings: any }>
-    save: (settings: any) => Promise<{ success: boolean }>
+    save: (key:string, value:any) => Promise<{ success: boolean }>
+  }
+  sessions:{
+    get: ()=> Promise<{ success: boolean; sessions: any }> 
+    delete:(sessionId:string)=> Promise<{ success: boolean }>
+  }
+  messages:{
+    get: (sessionId:string)=> Promise<{ success: boolean; messages: any[] }>
   }
   window: {
     minimize: () => Promise<void>
