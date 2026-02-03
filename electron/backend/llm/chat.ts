@@ -3,10 +3,13 @@ import {SqliteSaver} from '@langchain/langgraph-checkpoint-sqlite';
 import { getModel } from "./llm";
 import { HumanMessage } from "@langchain/core/messages";
 import { getDb } from "../db/db";
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileToBase64 } from "../util/util";
 
 class ChatInstance{
 
-    private app:any;
+    private app: any;
 
     newChatClient(){
         // 定义图节点 (Node)
@@ -23,17 +26,50 @@ class ChatInstance{
         // 构建图 (Graph)
         // MessagesAnnotation 是 LangGraph 预设的状态定义，专门用于存储消息列表
         const workflow = new StateGraph(MessagesAnnotation)
-            .addNode("agent", callModel) // 添加节点
-            .addEdge("__start__", "agent") // 定义开始指向 agent
-            .addEdge("agent", "__end__"); // agent 执行完后结束
+            .addNode("chat", callModel) // 添加节点
+            .addEdge("__start__", "chat") // 定义开始指向 agent
+            .addEdge("chat", "__end__"); // agent 执行完后结束
 
         this.app = workflow.compile({checkpointer:new SqliteSaver(getDb())});
     };
 
-
     // 执行并实现打字机效果
-    async streamingChat(question:string, sessionId:string, reply:any) {
-        const input = [new HumanMessage(question)];
+    async streamingChat(question:string, imagePaths:string[], sessionId:string, reply:any) {
+        // 构建消息内容
+        const content: any[] = [];
+        
+        // 添加文本内容（如果有）
+        if (question && question.trim()) {
+            content.push({
+                type: "text",
+                text: question
+            });
+        }
+        
+        // 添加图片内容
+        if (imagePaths?.length) {
+            for (const imagePath of imagePaths) {
+                try {
+                    // 检查文件是否存在
+                    if (fs.existsSync(imagePath)) {
+                        const base64DataUrl = fileToBase64(imagePath);
+                        content.push({
+                            type: "image_url",
+                            image_url: {
+                                url: base64DataUrl
+                            }
+                        });
+                    } else {
+                        console.warn(`File not found: ${imagePath}`);
+                    }
+                } catch (error) {
+                    console.error(`Error processing image ${imagePath}:`, error);
+                }
+            }
+        }
+        
+        
+        const input = [new HumanMessage(content)];
         const config = { configurable: { thread_id: sessionId } };
         if (!this.app){
             this.newChatClient();

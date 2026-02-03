@@ -101,9 +101,9 @@ const handleSelectSession = (sessionId: string) => {
   switchSession(sessionId)
 }
 
-const handleDeleteSession = (sessionId: string) => {
+const handleDeleteSession = async (sessionId: string) => {
   if (confirm('确定要删除这个会话吗？')) {
-    deleteSession(sessionId)
+    await deleteSession(sessionId)
     handleSearch()
   }
 }

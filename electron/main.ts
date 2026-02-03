@@ -1,11 +1,12 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
+import * as fs from 'fs';
 import { formatDateManual, isDev } from './utils'
 import {v4 as uuid} from 'uuid';
 import { createTable, queryItem, queryItems, saveOrUpdate } from './backend/db/db';
 import { CREAT_SETTINGS_TABLE, CREATE_MESSAGES_TABLE, CREATE_SESSIONS_TABLE, DELETE_SESSION, EXISTS_SESSION, QUERY_MESSAGES_WITH_SESSION_ID, QUERY_SESSIONS, QUERY_SETTINGS, SAVE_MESSAGES, SAVE_SESSIONS, SAVE_SETTINGS, UPDATE_SESSION_TIME } from './backend/util/sql';
 import { chat } from './backend/llm/chat';
-import { changeSettings } from './backend/util/util';
+import { changeSettings, constructFileData, getAppPath, getLocalImagePath, fileToBase64, saveBase64ToFile } from './backend/util/util';
 
 let mainWindow: BrowserWindow | null = null
 
@@ -61,20 +62,33 @@ app.whenReady().then(() => {
   createTable(CREATE_MESSAGES_TABLE);
 
   // IPC Handlers
-  ipcMain.handle('chat:sendMessage', async (event, message: string, sessionId?:string) => {
-    console.log('Chat message received:', message)
+  ipcMain.handle('chat:sendMessage', async (event, message: string, filePaths?: string[], sessionId?:string) => {
+    console.log('Chat message received:', message, 'Files:', filePaths)
     const reply = event.sender as any
     if (!sessionId){
       sessionId = uuid();
     }
     const exsit = queryItem(EXISTS_SESSION, sessionId);
     if (exsit.num == 0){
-      saveOrUpdate(SAVE_SESSIONS, sessionId, message.length>30 ? message.substring(0, 30) : message)
+      const title = message.length>30 ? message.substring(0, 30) : message || (filePaths && filePaths.length > 0 ? `[已上传 ${filePaths.length} 个文件]` : '新对话')
+      saveOrUpdate(SAVE_SESSIONS, sessionId, title)
     }
     try {
-      const answer = await chat.streamingChat(message, sessionId, reply);
-      saveOrUpdate(SAVE_MESSAGES, sessionId, 'user', message);
-      saveOrUpdate(SAVE_MESSAGES, sessionId, 'assistant',answer);
+      const answer = await chat.streamingChat(message, filePaths || [], sessionId, reply);
+      let attachments = '';
+      if (filePaths?.length){
+        const datas = filePaths.map(value=>{
+          let data = constructFileData(value);
+          let localPath = getLocalImagePath(data.name);
+          saveBase64ToFile(data.preview, localPath);
+          data.preview = localPath;
+          return data;
+        })
+        attachments = JSON.stringify(datas);
+      }
+      saveOrUpdate(SAVE_MESSAGES, sessionId, 'user', message, attachments);
+
+      saveOrUpdate(SAVE_MESSAGES, sessionId, 'assistant',answer, '');
       saveOrUpdate(UPDATE_SESSION_TIME , formatDateManual(new Date()), sessionId);
       return { success: true}
     } catch (error:any) {
@@ -141,7 +155,17 @@ app.whenReady().then(() => {
 
   ipcMain.handle('messages:get', async (_event, sessionId:string)=>{
     try {
-      const messages = queryItems(QUERY_MESSAGES_WITH_SESSION_ID, sessionId);
+      const results = queryItems(QUERY_MESSAGES_WITH_SESSION_ID, sessionId);
+      let messages:any[] = [];
+      if (results && Array.isArray(results)){
+        messages = results.map(value=>{
+          let localPath = value.preview;
+          if (localPath?.length){
+            value.preview = fileToBase64(localPath);
+          }
+          return value;
+        })
+      }
       return { success: true, messages }
     } catch (error) {
       console.error('messages get error:', error)
@@ -172,6 +196,30 @@ app.whenReady().then(() => {
     if (mainWindow) {
       mainWindow.close()
     }
+  })
+
+  ipcMain.handle('dialog:showOpenDialog', async (_event, options?: { filters?: Array<{ name: string; extensions: string[] }>; multiple?: boolean }) => {
+    if (!mainWindow) {
+      return { canceled: true, filePaths: [] }
+    }
+    
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: options?.multiple ? ['openFile', 'multiSelections'] : ['openFile'],
+      filters: options?.filters || [
+        { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] },
+        { name: 'Videos', extensions: ['mp4', 'webm', 'mov', 'avi', 'mkv'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    
+    return {
+      canceled: result.canceled,
+      filePaths: result.filePaths
+    }
+  })
+
+  ipcMain.handle('file:readAsDataURL', async (_event, filePath: string) => {
+    return constructFileData(filePath);
   })
 
   createWindow()

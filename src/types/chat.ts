@@ -1,7 +1,14 @@
+export interface MessageAttachment {
+  type: 'image' | 'video' | 'file'
+  path: string
+  name: string
+}
+
 export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  attachments?: MessageAttachment[]
 }
 
 export interface ChatSession {
