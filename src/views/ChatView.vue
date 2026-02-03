@@ -18,6 +18,27 @@
             <span v-else>🤖</span>
           </div>
           <div class="message-content">
+            <div v-if="message.attachments && message.attachments.length > 0" class="message-attachments">
+              <div
+                v-for="(attachment, attIndex) in message.attachments"
+                :key="attIndex"
+                class="message-attachment"
+              >
+                <img
+                  v-if="attachment.type === 'image'"
+                  :src="attachmentPreviewCache[attachment.path] || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'"
+                  :alt="attachment.name"
+                  :data-file-path="attachment.path"
+                  class="attachment-image"
+                  @error="handleImageError"
+                  @load="loadAttachmentPreview(attachment.path)"
+                />
+                <div v-else class="attachment-file">
+                  <span class="file-icon">{{ attachment.type === 'video' ? '🎬' : '📎' }}</span>
+                  <span class="file-name">{{ attachment.name }}</span>
+                </div>
+              </div>
+            </div>
             <div class="message-text" v-html="renderMessage(message.content)"></div>
             <div class="message-time">{{ formatTime(message.timestamp) }}</div>
           </div>
@@ -38,13 +59,50 @@
       </div>
 
       <div class="input-container">
-        <textarea
-          v-model="inputMessage"
-          @keydown="handleKeyDown"
-          placeholder="输入你的问题，回车发送"
-          ref="textarea"
-          class="chat-input"
-        ></textarea>
+        <div class="input-wrapper">
+          <div class="attachments-preview" v-if="selectedFiles.length > 0">
+            <div
+              v-for="(file, index) in selectedFiles"
+              :key="index"
+              class="attachment-item"
+            >
+              <img
+                v-if="file.type === 'image'"
+                :src="file.preview"
+                :alt="file.name"
+                class="attachment-preview-image"
+              />
+              <div v-else class="attachment-preview-file">
+                <span class="file-icon">📎</span>
+                <span class="file-name">{{ file.name }}</span>
+              </div>
+              <button
+                @click="removeFile(index)"
+                class="remove-attachment"
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+          <div class="input-row">
+            <button
+              @click="triggerFileSelect"
+              class="file-select-btn"
+              type="button"
+              title="选择文件"
+            >
+              📎
+            </button>
+            <textarea
+              v-model="inputMessage"
+              @keydown="handleKeyDown"
+              placeholder="输入你的问题，回车发送"
+              ref="textarea"
+              class="chat-input"
+            ></textarea>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -56,19 +114,46 @@ import SessionSidebar from '../components/SessionSidebar.vue'
 import { useCurrentSession, addMessage, clearCurrentSession, createSession } from '../services/useChatSessions'
 import { renderMarkdown } from '../services/useMarkdown'
 import { initializeSessions } from '../services/useChatSessions'
-import type { Message } from '../types/chat'
+import type { Message, MessageAttachment } from '../types/chat'
 
 const currentSession = useCurrentSession()
 const inputMessage = ref('')
 const isLoading = ref(false)
 const isStreaming = ref(false)
 const messagesContainer = ref<HTMLElement>()
+const selectedFiles = ref<Array<{ path: string; preview: string; name: string; type: 'image' | 'video' | 'file' }>>([])
+const attachmentPreviewCache = ref<Record<string, string>>({})
 let streamListener: ((event: any, data: any) => void) | null = null
 
 const initMessage = "正在思考..."
 
 const renderMessage = (content: string) => {
   return renderMarkdown(content)
+}
+
+const loadAttachmentPreview = async (filePath: string) => {
+  if (!attachmentPreviewCache.value[filePath] && window.electronAPI) {
+    try {
+      const data = await window.electronAPI.file.readAsDataURL(filePath)
+      attachmentPreviewCache.value[filePath] = data.preview
+    } catch (error) {
+      console.error('Error loading attachment preview:', error)
+    }
+  }
+}
+
+const handleImageError = async (event: Event) => {
+  const img = event.target as HTMLImageElement
+  const filePath = img.dataset.filePath || ''
+  if (filePath && window.electronAPI) {
+    try {
+      const data = await window.electronAPI.file.readAsDataURL(filePath)
+      attachmentPreviewCache.value[filePath] = data.preview
+      img.src = data.preview
+    } catch (error) {
+      console.error('Error loading image:', error)
+    }
+  }
 }
 
 const scrollToBottom = async () => {
@@ -90,17 +175,53 @@ const clearChat = () => {
   scrollToBottom()
 }
 
+const triggerFileSelect = async () => {
+  try {
+    const result = await window.electronAPI.dialog.showOpenDialog({
+      filters: [
+        { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] }
+      ],
+      multiple: true
+    })
+
+    if (!result.canceled && result.filePaths.length > 0) {
+      for (const filePath of result.filePaths) {
+        const data = await window.electronAPI.file.readAsDataURL(filePath)
+        selectedFiles.value.push(data);
+      }
+    }
+  } catch (error) {
+    console.error('Error selecting files:', error)
+  }
+}
+
+const removeFile = (index: number) => {
+  selectedFiles.value.splice(index, 1)
+}
+
 const sendMessage = async () => {
   const message = inputMessage.value.trim()
-  if (!message || isLoading.value) return
+  const hasFiles = selectedFiles.value.length > 0
+  
+  if ((!message && !hasFiles) || isLoading.value) return
+
+  // 准备文件路径和附件信息
+  const filePaths: string[] = selectedFiles.value.map(f => f.path)
+  const attachments: MessageAttachment[] = selectedFiles.value.map(f => ({
+    type: f.type,
+    path: f.path,
+    name: f.name
+  }))
 
   addMessage({
     role: 'user',
-    content: message,
+    content: message || (hasFiles ? `[已上传 ${selectedFiles.value.length} 个文件]` : ''),
     timestamp: Date.now(),
+    attachments: attachments.length > 0 ? attachments : undefined
   })
 
   inputMessage.value = ''
+  selectedFiles.value = []
   isLoading.value = true
   isStreaming.value = false
   await scrollToBottom()
@@ -116,7 +237,7 @@ const sendMessage = async () => {
   await new Promise(resolve => setTimeout(resolve, 500))
 
   try {
-    await window.electronAPI.chat.sendMessage(message, currentSession.value?.id)
+    await window.electronAPI.chat.sendMessage(message, filePaths, currentSession.value?.id)
   } catch (error:any) {
     const session = currentSession.value
     if (session && session.messages.length > 0) {
@@ -139,7 +260,6 @@ const handleKeyDown = (event: KeyboardEvent) => {
 }
 
 onMounted(() => {
-  console.log(111);
   initializeSessions()
   scrollToBottom()
 
@@ -149,7 +269,7 @@ onMounted(() => {
       if (session && session.messages.length > 0) {
         const lastMessage = session.messages[session.messages.length - 1]
         if (lastMessage.role === 'assistant') {
-          if (!data.sessionId){
+          if (!session.id){
             session.id = data.sessionId;
           }
           if (data.chunk !== undefined) {
@@ -177,9 +297,21 @@ onUnmounted(() => {
   }
 })
 
-watch(currentSession, () => {
+watch(currentSession, async () => {
   scrollToBottom()
-})
+  // 预加载消息中的附件预览
+  if (currentSession.value?.messages) {
+    for (const message of currentSession.value.messages) {
+      if (message.attachments) {
+        for (const attachment of message.attachments) {
+          if (attachment.type === 'image' && !attachmentPreviewCache.value[attachment.path]) {
+            await loadAttachmentPreview(attachment.path)
+          }
+        }
+      }
+    }
+  }
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -268,6 +400,59 @@ watch(currentSession, () => {
 
 .message.user .message-content {
   align-items: flex-end;
+}
+
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.message-attachment {
+  position: relative;
+  display: inline-block;
+}
+
+.attachment-image {
+  max-width: 300px;
+  max-height: 300px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  object-fit: contain;
+}
+
+.message.user .attachment-image {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.message.user .attachment-file {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+.attachment-file .file-icon {
+  font-size: 16px;
+}
+
+.attachment-file .file-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .message-text {
@@ -497,8 +682,110 @@ watch(currentSession, () => {
   transition: background 0.3s, border-color 0.3s;
 }
 
+.input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachments-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.attachment-item {
+  position: relative;
+  display: inline-block;
+}
+
+.attachment-preview-image {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.attachment-preview-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.file-icon {
+  font-size: 16px;
+}
+
+.file-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove-attachment {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  transition: all 0.2s;
+}
+
+.remove-attachment:hover {
+  background: var(--accent-color);
+  color: #ffffff;
+  border-color: var(--accent-color);
+}
+
+.input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.file-select-btn {
+  width: 40px;
+  height: 48px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.file-select-btn:hover {
+  background: var(--accent-color);
+  color: #ffffff;
+  border-color: var(--accent-color);
+}
+
 .chat-input {
-  width: 100%;
+  flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius:  12px;

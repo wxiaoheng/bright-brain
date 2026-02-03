@@ -1,14 +1,10 @@
-// import Database from 'better-sqlite3';
-import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { getAppPath } from '../util/util';
 
 const Database = require('better-sqlite3');
 
-let appPath = app.getAppPath();
-if (fs.statSync(appPath).isFile()){
-    appPath = path.dirname(appPath);
-}
+let appPath = getAppPath();
 // 1.db文件存储目录
 const dbPath = path.join(appPath, 'db');
 if (!fs.existsSync(dbPath)){

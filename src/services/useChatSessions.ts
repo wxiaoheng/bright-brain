@@ -46,11 +46,12 @@ export const switchSession = async (sessionId: string) => {
     const result = await window.electronAPI.messages.get(sessionId);
     if (result.success && Array.isArray(result.messages)){
       currentSession.value.messages = result.messages.map(value=>{
-        const {role, content, created_at} = value;
+        const {role, content, created_at, attachments} = value;
         return {
           role,
           content,
-          timestamp: created_at
+          timestamp: created_at,
+          attachments:JSON.parse(attachments || '[]')
         }
       })
     }
@@ -58,9 +59,9 @@ export const switchSession = async (sessionId: string) => {
 }
 
 // 删除会话
-export const deleteSession = (sessionId: string) => {
+export const deleteSession = async (sessionId: string) => {
   sessions.value = sessions.value.filter(s => s.id !== sessionId)
-  window.electronAPI.sessions.delete(sessionId);
+  await window.electronAPI.sessions.delete(sessionId);
   if (currentSessionId.value === sessionId) {
     currentSessionId.value = sessions.value[0]?.id || null
     if (currentSessionId.value){

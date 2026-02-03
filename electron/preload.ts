@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   chat: {
-    sendMessage: (message: string, sessionId?:string) => ipcRenderer.invoke('chat:sendMessage', message, sessionId),
+    sendMessage: (message: string, filePaths?: string[], sessionId?:string) => ipcRenderer.invoke('chat:sendMessage', message, filePaths || [], sessionId),
     onStream: (callback: (data: any) => void) => {
       const listener = (_event: any, data: any) => callback(data)
       ipcRenderer.on('chat:stream', listener)
@@ -48,6 +48,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     close: () => {
       console.log('Preload: Calling close')
       return ipcRenderer.invoke('window:close')
+    },
+  },
+  dialog: {
+    showOpenDialog: (options?: { filters?: Array<{ name: string; extensions: string[] }>; multiple?: boolean }) => {
+      return ipcRenderer.invoke('dialog:showOpenDialog', options)
+    },
+  },
+  file: {
+    readAsDataURL: (filePath: string) => {
+      return ipcRenderer.invoke('file:readAsDataURL', filePath)
     },
   },
 })

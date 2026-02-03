@@ -1,6 +1,6 @@
 export interface ElectronAPI {
   chat: {
-    sendMessage: (message: string, sessionId?:string) => Promise<{ success: boolean; response: string }>
+    sendMessage: (message: string, filePaths?: string[], sessionId?:string) => Promise<{ success: boolean; response: string }>
     onStream: (callback: (data: any) => void) => () => void
   }
   search: {
@@ -21,6 +21,12 @@ export interface ElectronAPI {
     minimize: () => Promise<void>
     maximize: () => Promise<void>
     close: () => Promise<void>
+  }
+  dialog: {
+    showOpenDialog: (options?: { filters?: Array<{ name: string; extensions: string[] }>; multiple?: boolean }) => Promise<{ canceled: boolean; filePaths: string[] }>
+  }
+  file: {
+    readAsDataURL: (filePath: string) => Promise<{path: string,preview:string,name: string, type: "video" | "image" | "file"}>
   }
 }
 

@@ -55,7 +55,7 @@ export const CREATE_MESSAGES_TABLE = ` CREATE TABLE IF NOT EXISTS messages (
     )`
 
 // 增加message信息
-export const SAVE_MESSAGES = `INSERT OR REPLACE INTO messages (session_id, role, content) VALUES (?, ?, ?)`;
+export const SAVE_MESSAGES = `INSERT OR REPLACE INTO messages (session_id, role, content, attachments) VALUES (?, ?, ?, ?)`;
 
 //根据sessionId查询message消息
 export const QUERY_MESSAGES_WITH_SESSION_ID = `SELECT * FROM messages where session_id= ?  ORDER BY id ASC`;
