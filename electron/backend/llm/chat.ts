@@ -1,11 +1,12 @@
 import { MessagesAnnotation, StateGraph, MemorySaver} from "@langchain/langgraph";
 import {SqliteSaver} from '@langchain/langgraph-checkpoint-sqlite';
 import { getModel } from "./llm";
-import { HumanMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { getDb } from "../db/db";
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileToBase64 } from "../util/util";
+import { searchSimilar } from "../rag/vector";
 
 class ChatInstance{
 
@@ -67,9 +68,15 @@ class ChatInstance{
                 }
             }
         }
+        let input = [];
+        // 从本地向量库中获取关联文档
+        const docs = await searchSimilar(question, 3, true);
+        if (docs.length>0){
+            const relates = docs.map(doc=>doc.text).join('\n\n');
+            input.push(new SystemMessage(`可参考内容有：${relates}`))
+        }
         
-        
-        const input = [new HumanMessage(content)];
+        input.push(new HumanMessage(content))
         const config = { configurable: { thread_id: sessionId } };
         if (!this.app){
             this.newChatClient();

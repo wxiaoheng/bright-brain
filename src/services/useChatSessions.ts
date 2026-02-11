@@ -143,7 +143,7 @@ export const initializeSessions = async () => {
   const results = await window.electronAPI.sessions.get();
   if (results.success && Array.isArray(results.sessions)){
     sessions.value = results.sessions.map(value=>{
-      const {id, title, created_at, updated_at} = value;
+      const {id, title, created_at, updated_at, size} = value;
       return {
         id,
         title,

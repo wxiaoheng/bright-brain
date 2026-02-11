@@ -1,9 +1,24 @@
 import { app } from 'electron';
 import { chat } from "../llm/chat";
-import { SETTING_KEY_API_KEY, SETTING_KEY_MODEL, SETTING_KEY_MODEL_PROVIDER } from './const';
+import { DATA_FOLDER, DB_FOLDER, FILES_FOLDER, IMAGES_FOLDER, SETTING_KEY_API_KEY, SETTING_KEY_MODEL, SETTING_KEY_MODEL_PROVIDER, VECTOR_FOLDER } from './const';
 import * as fs from 'fs';
 import * as path from 'path';
 import {v4 as uuid} from 'uuid';
+import * as iconv from 'iconv-lite';
+import { addDocument } from '../rag/vector';
+
+export const isDev = process.env.NODE_ENV === 'development'
+
+export function formatDateManual(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0'); // 月份从0开始，要+1
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
 
 export function getAppPath(){
   let appPath = app.getAppPath();
@@ -36,7 +51,7 @@ export function constructFileData(filePath:string){
         // 对于图片，读取并生成预览
         if (isImage) {
           try {
-            const preview = readFileData(filePath)
+            const preview = fileToBase64(filePath)
             return {
               path: filePath,
               preview,
@@ -118,13 +133,72 @@ export async function saveBase64ToFile(
 
 export function getLocalImagePath(fileName:string){
   const ext = fileName.split('.').pop()?.toLowerCase() || ''
-  let localPath = path.join(getAppPath(), 'images');
-  if (!fs.existsSync(localPath)){
-      fs.mkdirSync(localPath);
-  }
+  let localPath = path.join(getAppPath(), DATA_FOLDER, IMAGES_FOLDER);
   let name = uuid();
   if (ext.length){
     name = `${name}.${ext}`;
   }
   return path.join(localPath, name);
+}
+
+
+export function addItemToVector(item: { type: 'file' | 'directory' | 'url'; source: string; name?: string }, id:string){
+  let {type, source, name} = item;
+  if (type === 'file'){
+    if (!name){
+      name = path.basename(source);
+    }
+    const ext = path.extname(source);
+    if (ext == '.md'){
+      // markdown文档
+      const buf = fs.readFileSync(source);
+      const content = iconv.decode(buf, 'utf8');
+      addDocument(content, {source, name, fileId:id})
+    }
+  }else if (type === 'directory'){
+
+  }else {
+
+  }
+}
+
+/**
+ * 初始化存放数据的目录
+ */
+export function initLocalFolders(){
+  const app = getAppPath();
+  const data = ensureFolderExist(app, DATA_FOLDER);
+  ensureFolderExist(data, IMAGES_FOLDER);
+  ensureFolderExist(data, FILES_FOLDER);
+  ensureFolderExist(data, DB_FOLDER);
+  ensureFolderExist(data, VECTOR_FOLDER);
+}
+
+/**
+ * 确保目录存在
+ * @param parent 
+ * @param folder 
+ * @returns 
+ */
+export function ensureFolderExist(parent:string, folder:string){
+  const local = path.join(parent, folder);
+  if (!fs.existsSync(local)){
+      fs.mkdirSync(local);
+  }
+  return local;
+}
+
+function getSlidingWindows(text:string, windowSize = 512, overlap = 100) {
+    if (text.length <= windowSize) return [text];
+    
+    const chunks:string[] = [];
+    let start = 0;
+    while (start < text.length) {
+        // 保证切分点尽量不切断单词（简单优化，可忽略）
+        let end = Math.min(start + windowSize, text.length);
+        chunks.push(text.slice(start, end));
+        if (end === text.length) break;
+        start += (windowSize - overlap);
+    }
+    return chunks;
 }

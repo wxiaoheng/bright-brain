@@ -19,6 +19,7 @@ export const CREATE_SESSIONS_TABLE = `
       id TEXT PRIMARY KEY ,
       title TEXT NOT NULL,
       del INTEGER DEFAULT 0,
+      
       created_at DATETIME DEFAULT (datetime('now', 'localtime')),
       updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
     )
@@ -59,3 +60,32 @@ export const SAVE_MESSAGES = `INSERT OR REPLACE INTO messages (session_id, role,
 
 //根据sessionId查询message消息
 export const QUERY_MESSAGES_WITH_SESSION_ID = `SELECT * FROM messages where session_id= ?  ORDER BY id ASC`;
+
+// 知识源表（文件/目录/URL）
+export const CREATE_KNOWLEDGE_TABLE = `
+  CREATE TABLE IF NOT EXISTS knowledges (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    source TEXT NOT NULL,
+    name TEXT,
+    created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+  )
+`;
+export const QUERY_KNOWLEDGE = `SELECT * FROM knowledges ORDER BY created_at DESC`;
+export const SAVE_KNOWLEDGE = `INSERT INTO knowledges (id, type, source, name) VALUES (?,?, ?, ?)`;
+export const DELETE_KNOWLEDGE = `DELETE FROM knowledges WHERE id = ?`;
+
+
+export const CREATE_CHUNKS_TABLE = `
+  CREATE TABLE IF NOT EXISTS chunks (
+    id TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL,
+    title TEXT,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+  )
+`
+
+export const QUERY_CHUNK = `SELECT * FROM chunks where id = ?`;
+export const SAVE_CHUNK = `INSERT INTO chunks (id, file_id, title, content) VALUES (?,?, ?, ?)`;
+export const DELETE_CHUNK = `DELETE FROM chunks WHERE file_id = ?`;

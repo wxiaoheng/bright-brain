@@ -37,7 +37,6 @@
         </div>
         <div class="session-meta">
           <span class="session-date">{{ formatTime(session.updatedAt) }}</span>
-          <span class="session-count">{{ session.messages.length }} messages</span>
         </div>
       </div>
     </div>

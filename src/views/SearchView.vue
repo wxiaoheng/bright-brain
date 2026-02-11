@@ -1,126 +1,147 @@
 <template>
-  <div class="search-container">
-    <div class="search-header">
-      <h2>Custom Search</h2>
-    </div>
-
-    <div class="search-section">
-      <div class="search-input-wrapper">
-        <input
-          v-model="searchQuery"
-          @keydown.enter="executeSearch"
-          type="text"
-          placeholder="Search for anything..."
-          class="search-input"
-        />
-        <div class="deep-search">
-          <label class="switch-label">
-            <span class="switch">
-              <input
-                v-model="deepSearch"
-                type="checkbox"
-                @change="executeSearch"
-              />
-              <span class="slider"></span>
-            </span>
-            <span class="switch-text">深度搜索</span>
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <div class="search-results">
-      <div v-if="isLoading" class="loading">
-        <div class="spinner"></div>
-        <p>Searching...</p>
+  <div class="search-wrapper">
+    <KnowledgeSidebar />
+    <div class="search-main">
+      <div class="search-header">
+        <h2>知识搜索</h2>
       </div>
 
-      <div v-else-if="results.length === 0 && hasSearched" class="no-results">
-        <span class="icon">🔍</span>
-        <p>No results found for "{{ searchQuery }}"</p>
-      </div>
-
-      <div v-else-if="results.length > 0" class="results-list">
-        <div
-          v-for="(result, index) in results"
-          :key="index"
-          class="result-item"
-        >
-          <div class="result-title">{{ result.title }}</div>
-          <div class="result-url">{{ result.url }}</div>
-          <div class="result-description">{{ result.description }}</div>
+      <div class="search-section">
+        <div class="search-input-wrapper">
+          <input
+            v-model="searchQuery"
+            @keydown.enter="executeSearch"
+            type="text"
+            placeholder="Search for anything..."
+            class="search-input"
+          />
+          <div class="deep-search">
+            <label class="switch-label">
+              <span class="switch">
+                <input
+                  v-model="deepSearch"
+                  type="checkbox"
+                />
+                <span class="slider"></span>
+              </span>
+              <span class="switch-text">深度搜索</span>
+            </label>
+          </div>
         </div>
       </div>
 
-      <div v-else class="placeholder">
-        <span class="icon">🔎</span>
-        <p>Start by typing a search query above</p>
+      <div class="search-results">
+        <div v-if="isLoading" class="loading">
+          <div class="spinner"></div>
+          <p>Searching...</p>
+        </div>
+        <div v-else-if="results.length === 0 && hasSearched" class="no-results">
+          <span class="icon">🔍</span>
+          <p>No results found for "{{ searchQuery }}"</p>
+        </div>
+        <div v-else-if="results.length > 0" class="results-list">
+          <div
+            v-for="(result, index) in results"
+            :key="index"
+            class="result-item"
+          >
+            <div class="result-title">{{ result.name }}</div>
+            <div
+              class="result-url"
+              role="link"
+              tabindex="0"
+              @click="openResultUrl(result.source)"
+              @keydown.enter.prevent="openResultUrl(result.source)"
+              @keydown.space.prevent="openResultUrl(result.source)"
+            >
+              {{ result.source }}
+            </div>
+            <div class="result-description">{{ result.text }}</div>
+          </div>
+        </div>
+        <div v-else class="placeholder">
+          <span class="icon">🔎</span>
+          <p>Start by typing a search query above</p>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import KnowledgeSidebar from '../components/KnowledgeSidebar.vue'
 
 interface SearchResult {
-  title: string
-  url: string
-  description: string
+  name: string
+  source: string
+  text: string
 }
 
 const searchQuery = ref('')
 const isLoading = ref(false)
 const hasSearched = ref(false)
 const results = ref<SearchResult[]>([])
-const deepSearch = ref(false)
+let deepSearch = ref(false)
 
 const executeSearch = async () => {
   const query = searchQuery.value.trim()
   if (!query || isLoading.value) return
-
   isLoading.value = true
   hasSearched.value = true
-
   try {
-    const response = await window.electronAPI.search.execute(query)
-    if (response.success) {
-      results.value = response.results
-    }
+    const response = await window.electronAPI.search.execute(query, deepSearch.value)
+    if (response.success) results.value = response.results
   } catch (error) {
     console.error('Search error:', error)
   }
-
   isLoading.value = false
+}
+
+const openResultUrl = async (target: string) => {
+  const trimmed = (target || '').trim()
+  if (!trimmed) return
+  try {
+    await window.electronAPI.shell.open(trimmed)
+  } catch (error) {
+    console.error('Open url error:', error)
+  }
 }
 </script>
 
 <style scoped>
-.search-container {
+.search-wrapper {
   display: flex;
-  flex-direction: column;
   height: 100%;
   background: var(--bg-primary);
-  padding: 24px;
-  transition: background 0.3s;
+}
+
+.search-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  min-width: 0;
 }
 
 .search-header {
-  margin-bottom: 24px;
+  padding: 20px 24px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.3s, border-color 0.3s;
 }
 
 .search-header h2 {
-  font-size: 24px;
+  font-size: 20px;
   color: var(--text-primary);
   font-weight: 600;
+  margin: 0;
 }
 
 .search-section {
-  background: var(--bg-secondary);
   padding: 24px;
-  border-radius: 16px;
-  margin-bottom: 24px;
-  border: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
   transition: background 0.3s, border-color 0.3s;
 }
 
@@ -215,6 +236,7 @@ input:checked + .slider:before {
 .search-results {
   flex: 1;
   overflow-y: auto;
+  padding: 24px;
 }
 
 .loading {
@@ -303,11 +325,31 @@ input:checked + .slider:before {
   color: var(--text-secondary);
   font-size: 13px;
   margin-bottom: 8px;
+  cursor: pointer;
+  text-decoration: underline;
+  word-break: break-all;
 }
 
 .result-description {
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.6;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 </style>
