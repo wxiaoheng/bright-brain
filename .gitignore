@@ -8,6 +8,5 @@ release
 package-lock.json
 .vscode/lightcode
 notes
-db
-vector
-images
+data
+models

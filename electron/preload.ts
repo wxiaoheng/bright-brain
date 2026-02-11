@@ -10,7 +10,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
   search: {
-    execute: (query: string) => ipcRenderer.invoke('search:execute', query),
+    execute: (query: string, deepSearch = false) => ipcRenderer.invoke('search:execute', query, deepSearch),
+  },
+  shell: {
+    open: (target: string) => ipcRenderer.invoke('shell:open', target),
   },
   settings: {
     get: () => {
@@ -51,9 +54,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
   dialog: {
-    showOpenDialog: (options?: { filters?: Array<{ name: string; extensions: string[] }>; multiple?: boolean }) => {
+    showOpenDialog: (options?: { filters?: Array<{ name: string; extensions: string[] }>; multiple?: boolean; directory?: boolean }) => {
       return ipcRenderer.invoke('dialog:showOpenDialog', options)
     },
+  },
+  knowledge: {
+    list: () => ipcRenderer.invoke('knowledge:list'),
+    add: (item: { type: 'file' | 'directory' | 'url'; source: string; name?: string; id?:string }) => ipcRenderer.invoke('knowledge:add', item),
+    remove: (id: string) => ipcRenderer.invoke('knowledge:remove', id),
   },
   file: {
     readAsDataURL: (filePath: string) => {
