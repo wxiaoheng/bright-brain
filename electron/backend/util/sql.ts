@@ -51,6 +51,7 @@ export const CREATE_MESSAGES_TABLE = ` CREATE TABLE IF NOT EXISTS messages (
       session_id TEXT NOT NULL,
       role TEXT NOT NULL, -- 'user' | 'assistant' | 'system'
       content TEXT NOT NULL,
+      attachments TEXT,
       created_at DATETIME DEFAULT (datetime('now', 'localtime'))
     )`
 
