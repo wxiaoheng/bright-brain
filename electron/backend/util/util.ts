@@ -22,8 +22,8 @@ export function formatDateManual(date: Date): string {
 
 export function getAppPath(){
   let appPath = app.getAppPath();
-  if (fs.statSync(appPath).isFile()){
-      appPath = path.dirname(appPath);
+  if (app.isPackaged){
+      appPath = path.dirname(path.dirname(appPath));
   }
   return appPath;
 }
@@ -181,6 +181,9 @@ export function initLocalFolders(){
  * @returns 
  */
 export function ensureFolderExist(parent:string, folder:string){
+  if (!fs.existsSync(parent)){
+      fs.mkdirSync(parent);
+  }
   const local = path.join(parent, folder);
   if (!fs.existsSync(local)){
       fs.mkdirSync(local);
