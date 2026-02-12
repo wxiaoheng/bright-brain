@@ -7,8 +7,8 @@ import {v4 as uuid} from 'uuid';
 
 export function getAppPath(){
   let appPath = app.getAppPath();
-  if (fs.statSync(appPath).isFile()){
-      appPath = path.dirname(appPath);
+  if (app.isPackaged){
+      appPath = path.dirname(path.dirname(appPath));
   }
   return appPath;
 }
