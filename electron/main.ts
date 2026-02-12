@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
 import {v4 as uuid} from 'uuid';
-import { createTable, queryItem, queryItems, saveOrUpdate } from './backend/db/db';
+import { createTable, initSqlite, queryItem, queryItems, saveOrUpdate } from './backend/db/db';
 import { CREAT_SETTINGS_TABLE, CREATE_CHUNKS_TABLE, CREATE_KNOWLEDGE_TABLE, CREATE_MESSAGES_TABLE, CREATE_SESSIONS_TABLE, DELETE_CHUNK, DELETE_KNOWLEDGE, DELETE_SESSION, EXISTS_SESSION, QUERY_KNOWLEDGE, QUERY_MESSAGES_WITH_SESSION_ID, QUERY_SESSIONS, QUERY_SETTINGS, SAVE_KNOWLEDGE, SAVE_MESSAGES, SAVE_SESSIONS, SAVE_SETTINGS, UPDATE_SESSION_TIME } from './backend/util/sql';
 import { chat } from './backend/llm/chat';
 import { changeSettings, constructFileData, getAppPath, getLocalImagePath, fileToBase64, saveBase64ToFile, addItemToVector, isDev, formatDateManual, initLocalFolders } from './backend/util/util';
@@ -59,6 +59,8 @@ app.whenReady().then(() => {
 
   initLocalFolders();
 
+  initSqlite();
+  
   createTable(CREAT_SETTINGS_TABLE);
   createTable(CREATE_SESSIONS_TABLE);
   createTable(CREATE_MESSAGES_TABLE);
