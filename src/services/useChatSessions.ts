@@ -46,12 +46,13 @@ export const switchSession = async (sessionId: string) => {
     const result = await window.electronAPI.messages.get(sessionId);
     if (result.success && Array.isArray(result.messages)){
       currentSession.value.messages = result.messages.map(value=>{
-        const {role, content, created_at, attachments} = value;
+        const {role, content, created_at, attachments, references} = value;
         return {
           role,
           content,
           timestamp: created_at,
-          attachments:JSON.parse(attachments || '[]')
+          attachments:JSON.parse(attachments || '[]'),
+          references:references || '',
         }
       })
     }

@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Bright-Brain Collector",
+  "version": "1.0",
+  "description": "一键收藏网页内容到 Bright-Brain 本地知识库",
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:3690/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"], 
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

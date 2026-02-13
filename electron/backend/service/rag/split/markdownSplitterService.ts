@@ -1,10 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { MarkdownTextSplitter } from '@langchain/textsplitters';
-import { MarkdownHeaderSplitter } from './markdownHeaderSplitter';
 import {v4 as uuid} from 'uuid';
-import { saveOrUpdate } from '../../db/db';
-import { SAVE_CHUNK } from '../../util/sql';
+import { saveChunk } from '../../knowledgeService';
+import { MarkdownHeaderSplitter } from './markdownHeaderSplitter';
 /**
  * 切分单个 Markdown 文件
  * @param {string} filePath - 文件路径
@@ -45,10 +44,10 @@ export async function splitText(text:string, options = {}, metadata:Record<strin
       if (saveDb){
         // 将父文档内容存到sqlite中
         const chunkId = uuid();
-        saveOrUpdate(SAVE_CHUNK, chunkId, metadata.fileId, chunkTitle, chunkText)
+        saveChunk(chunkId, metadata.file_id, chunkTitle, chunkText);
         splits.forEach(value=>{
-          value.metadata.fileId = metadata.fileId;
-          value.metadata.parentId=chunkId;
+          value.metadata.file_id = metadata.file_id;
+          value.metadata.parent_id=chunkId;
           docs.push(value);
         })
       }

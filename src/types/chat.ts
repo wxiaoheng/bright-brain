@@ -4,11 +4,18 @@ export interface MessageAttachment {
   name: string
 }
 
+export interface ReferenceContent{
+  source: string
+  name:string
+  text:string
+}
+
 export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
   attachments?: MessageAttachment[]
+  references?: ReferenceContent[]
 }
 
 export interface ChatSession {

@@ -1,12 +1,40 @@
-import { MessagesAnnotation, StateGraph, MemorySaver} from "@langchain/langgraph";
+import { ChatZhipuAI } from "@langchain/community/chat_models/zhipuai";
+import {ChatAlibabaTongyi} from "@langchain/community/chat_models/alibaba_tongyi"
+import {ChatDeepSeek} from "@langchain/deepseek"
+import { ds, qw, zp } from "../../util/const";
+import { getModelSettings } from "../../service/settingService";
+import { MessagesAnnotation, StateGraph} from "@langchain/langgraph";
 import {SqliteSaver} from '@langchain/langgraph-checkpoint-sqlite';
-import { getModel } from "./llm";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { getDb } from "../db/db";
+import { getDb } from "../../service/dbService";
 import * as fs from 'fs';
-import * as path from 'path';
-import { fileToBase64 } from "../util/util";
-import { searchSimilar } from "../rag/vector";
+import { fileToBase64 } from "../../util/util";
+import { searchSimilarKnowledge } from "../../service/knowledgeService";
+
+
+const getModel = ()=>{
+  
+  const {modelProvider, model, apiKey} = getModelSettings();
+  
+  if (modelProvider == zp){
+    return new ChatZhipuAI({
+      model: model,//"glm-4.7-flashx", // Available models:
+      zhipuAIApiKey: apiKey, 
+    });
+  }else if (modelProvider == qw){
+    return new ChatAlibabaTongyi({
+      model:model,
+      alibabaApiKey:apiKey,
+    })
+  }else if (modelProvider == ds){
+    return new ChatDeepSeek({
+      apiKey:apiKey,
+      model:model,//deepseek-chat
+    })
+  }else{
+    throw new Error(`暂不支持${modelProvider}模型`);
+  }
+}
 
 class ChatInstance{
 
@@ -38,15 +66,11 @@ class ChatInstance{
     async streamingChat(question:string, imagePaths:string[], sessionId:string, reply:any) {
         // 构建消息内容
         const content: any[] = [];
-        
-        // 添加文本内容（如果有）
-        if (question && question.trim()) {
-            content.push({
-                type: "text",
-                text: question
-            });
-        }
-        
+        // 添加文本内容
+        content.push({
+            type: "text",
+            text: question
+        });
         // 添加图片内容
         if (imagePaths?.length) {
             for (const imagePath of imagePaths) {
@@ -69,11 +93,17 @@ class ChatInstance{
             }
         }
         let input = [];
+        let references:any[] = [];
         // 从本地向量库中获取关联文档
-        const docs = await searchSimilar(question, 3, true);
+        const docs = await searchSimilarKnowledge(question, true);
         if (docs.length>0){
-            const relates = docs.map(doc=>doc.text).join('\n\n');
-            input.push(new SystemMessage(`可参考内容有：${relates}`))
+            const refContent = docs.map((doc:any)=>{
+                const text = doc.text
+                references.push({source:doc.source, text, name:doc.name});
+                return text;
+            }).join('\n\n');
+            const systemContent = `可参考内容有：${refContent}`;
+            input.push(new SystemMessage(systemContent))
         }
         
         input.push(new HumanMessage(content))
@@ -109,10 +139,13 @@ class ChatInstance{
         console.log("\n\n[回答结束]");
         reply.send('chat:stream', {
             sessionId,
+            references,
             done: true,
         })
-        return answer;
+        return {references, answer};
     }
 }
 
 export const chat = new ChatInstance();
+
+

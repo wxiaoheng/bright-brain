@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { ensureFolderExist, getAppPath } from '../util/util';
+import { getAppPath } from '../util/util';
 import { DATA_FOLDER, DB_FOLDER } from '../util/const';
 
 const Database = require('better-sqlite3');

@@ -20,6 +20,7 @@ const externalDeps = [
   'onnxruntime-web',
   /onnxruntime[-_]web.*/,
   /onnxruntime_binding\.node$/, // onnxruntime 二进制
+  'jsdom',
 ];
 
 export default defineConfig({

@@ -5,7 +5,7 @@ import {
   AutoModelForSequenceClassification 
 } from '@xenova/transformers';
 import path from 'path';
-import { getAppPath } from '../util/util';
+import { getAppPath } from '../../util/util';
 
 const modelBasePath = path.join(getAppPath(), 'models');
 
@@ -112,8 +112,14 @@ export async function rerank(query: string, documents: any[], topK: number = 3, 
   return filterResult(results, topK);
 }
 
+/**
+ * 父子文档处理，根据子文档来获取匹配到的topK父文档
+ * 同一个父文档，用分数最高的那个子文档作为它的分数，其他都去掉，然后再取topK
+ * @param results 
+ * @param topK 
+ * @returns 
+ */
 export function filterResult(results:any[],  topK: number = 3){
-  // {source, name:file_name, text, parentId:parent_id, score:_relevance_score}
   const map = new Map<string, any>();
 
   for (const item of results) {
