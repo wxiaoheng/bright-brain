@@ -1,12 +1,14 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
 import {v4 as uuid} from 'uuid';
-import { createTable, initSqlite, queryItem, queryItems, saveOrUpdate } from './backend/db/db';
-import { CREAT_SETTINGS_TABLE, CREATE_CHUNKS_TABLE, CREATE_KNOWLEDGE_TABLE, CREATE_MESSAGES_TABLE, CREATE_SESSIONS_TABLE, DELETE_CHUNK, DELETE_KNOWLEDGE, DELETE_SESSION, EXISTS_SESSION, QUERY_KNOWLEDGE, QUERY_MESSAGES_WITH_SESSION_ID, QUERY_SESSIONS, QUERY_SETTINGS, SAVE_KNOWLEDGE, SAVE_MESSAGES, SAVE_SESSIONS, SAVE_SETTINGS, UPDATE_SESSION_TIME } from './backend/util/sql';
-import { chat } from './backend/llm/chat';
-import { changeSettings, constructFileData, getAppPath, getLocalImagePath, fileToBase64, saveBase64ToFile, addItemToVector, isDev, formatDateManual, initLocalFolders } from './backend/util/util';
-import { initVectorDB, removeContents, searchSimilar } from './backend/rag/vector';
+import { initSqlite } from './backend/service/dbService';
+import { changeSettings, constructFileData, getLocalImagePath, fileToBase64, saveBase64ToFile, isDev, initLocalFolders } from './backend/util/util';
 import { fileURLToPath } from 'url'
+import { getAllSettings, initSettings, saveSetting } from './backend/service/settingService';
+import { deleteSession, getMessages, getSessions, initMessages, saveMessages, saveSessions, sessionExists, updateSessionTime } from './backend/service/messageService';
+import { deleteKnowledge, getKnowledges, initKnowledges, saveKnowledge, searchSimilarKnowledge } from './backend/service/knowledgeService';
+import { chat } from './backend/service/chat/chatService';
+import { initServer } from './backend/server/server';
 
 let mainWindow: BrowserWindow | null = null
 
@@ -61,13 +63,11 @@ app.whenReady().then(() => {
 
   initSqlite();
   
-  createTable(CREAT_SETTINGS_TABLE);
-  createTable(CREATE_SESSIONS_TABLE);
-  createTable(CREATE_MESSAGES_TABLE);
-  createTable(CREATE_KNOWLEDGE_TABLE);
-  createTable(CREATE_CHUNKS_TABLE);
+  initSettings();
+  initMessages();
+  initKnowledges();
 
-  initVectorDB();
+  initServer();
 
   // IPC Handlers
   ipcMain.handle('chat:sendMessage', async (event, message: string, filePaths?: string[], sessionId?:string) => {
@@ -76,13 +76,12 @@ app.whenReady().then(() => {
     if (!sessionId){
       sessionId = uuid();
     }
-    const exsit = queryItem(EXISTS_SESSION, sessionId);
-    if (exsit.num == 0){
+    if (!sessionExists(sessionId)){
       const title = message.length>30 ? message.substring(0, 30) : message || (filePaths && filePaths.length > 0 ? `[已上传 ${filePaths.length} 个文件]` : '新对话')
-      saveOrUpdate(SAVE_SESSIONS, sessionId, title)
+      saveSessions(sessionId, title);
     }
     try {
-      const answer = await chat.streamingChat(message, filePaths || [], sessionId, reply);
+      const {answer, references} = await chat.streamingChat(message, filePaths || [], sessionId, reply);
       let attachments = '';
       if (filePaths?.length){
         const datas = filePaths.map(value=>{
@@ -94,10 +93,9 @@ app.whenReady().then(() => {
         })
         attachments = JSON.stringify(datas);
       }
-      saveOrUpdate(SAVE_MESSAGES, sessionId, 'user', message, attachments);
-
-      saveOrUpdate(SAVE_MESSAGES, sessionId, 'assistant',answer, '');
-      saveOrUpdate(UPDATE_SESSION_TIME , formatDateManual(new Date()), sessionId);
+      saveMessages(sessionId, 'user', message, attachments, JSON.stringify(references))
+      saveMessages(sessionId, 'assistant',answer, '', '')
+      updateSessionTime(sessionId);
       return { success: true}
     } catch (error:any) {
       reply.send('chat:stream', {
@@ -110,7 +108,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('search:execute', async (_event, query: string, deepSearch = false) => {
-    const results = await searchSimilar(query, 5, deepSearch, undefined);
+    const results = await searchSimilarKnowledge(query, deepSearch);
     return { success: true, results:results }
   })
 
@@ -136,14 +134,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('settings:get', async () => {
     try {
-      const result = queryItems(QUERY_SETTINGS);
-      let settings = {};
-      if (result && Array.isArray(result)){
-        settings = Object.fromEntries(
-          result.map(item => [item.key, item.value])
-        );
-      }
-      return { success: true, settings }
+      return { success: true, settings:getAllSettings() }
     } catch (error) {
       console.error('Settings get error:', error)
       return { success: false }
@@ -152,7 +143,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('settings:save', async (_event, key:string, value:any) => {
     try {
-      saveOrUpdate(SAVE_SETTINGS, key, value);
+      saveSetting(key, value);
       changeSettings(key, value);
       return { success: true }
     } catch (error) {
@@ -163,7 +154,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('sessions:get', async ()=>{
     try {
-      const sessions = queryItems(QUERY_SESSIONS);
+      const sessions = getSessions();
       return { success: true, sessions }
     } catch (error) {
       console.error('sessions get error:', error)
@@ -173,7 +164,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('sessions:delete', async (_event, sessionId:string)=>{
     try {
-      saveOrUpdate(DELETE_SESSION, sessionId);
+      deleteSession(sessionId);
       return { success: true }
     } catch (error) {
       console.error('sessions get error:', error)
@@ -183,7 +174,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('messages:get', async (_event, sessionId:string)=>{
     try {
-      const results = queryItems(QUERY_MESSAGES_WITH_SESSION_ID, sessionId);
+      const results = getMessages(sessionId);
       let messages:any[] = [];
       if (results && Array.isArray(results)){
         messages = results.map(value=>{
@@ -250,7 +241,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('knowledge:list', async () => {
     try {
-      const items = queryItems(QUERY_KNOWLEDGE)
+      const items = getKnowledges();
       return { success: true, items: items || [] }
     } catch (error) {
       console.error('knowledge list error:', error)
@@ -263,12 +254,9 @@ app.whenReady().then(() => {
       const oldId = item.id;
       const id = uuid();
       if (oldId){
-        saveOrUpdate(DELETE_KNOWLEDGE, oldId);
-        saveOrUpdate(DELETE_CHUNK, oldId);
-        removeContents(oldId);
+        await deleteKnowledge(oldId);
       }
-      saveOrUpdate(SAVE_KNOWLEDGE, id, item.type, item.source, item.name || item.source)
-      addItemToVector(item, id);
+      await saveKnowledge(id, item.type, item.source, item.name);
       return { success: true }
     } catch (error) {
       console.error('knowledge add error:', error)
@@ -278,9 +266,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('knowledge:remove', async (_event, id: string) => {
     try {
-      saveOrUpdate(DELETE_KNOWLEDGE, id);
-      saveOrUpdate(DELETE_CHUNK, id);
-      removeContents(id);
+      await deleteKnowledge(id);
       return { success: true }
     } catch (error) {
       console.error('knowledge remove error:', error)

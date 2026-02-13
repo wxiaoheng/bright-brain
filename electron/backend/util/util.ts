@@ -1,11 +1,10 @@
 import { app } from 'electron';
-import { chat } from "../llm/chat";
 import { DATA_FOLDER, DB_FOLDER, FILES_FOLDER, IMAGES_FOLDER, SETTING_KEY_API_KEY, SETTING_KEY_MODEL, SETTING_KEY_MODEL_PROVIDER, VECTOR_FOLDER } from './const';
 import * as fs from 'fs';
 import * as path from 'path';
 import {v4 as uuid} from 'uuid';
 import * as iconv from 'iconv-lite';
-import { addDocument } from '../rag/vector';
+import { chat } from '../service/chat/chatService';
 
 export const isDev = process.env.NODE_ENV === 'development'
 
@@ -142,26 +141,6 @@ export function getLocalImagePath(fileName:string){
 }
 
 
-export function addItemToVector(item: { type: 'file' | 'directory' | 'url'; source: string; name?: string }, id:string){
-  let {type, source, name} = item;
-  if (type === 'file'){
-    if (!name){
-      name = path.basename(source);
-    }
-    const ext = path.extname(source);
-    if (ext == '.md'){
-      // markdown文档
-      const buf = fs.readFileSync(source);
-      const content = iconv.decode(buf, 'utf8');
-      addDocument(content, {source, name, fileId:id})
-    }
-  }else if (type === 'directory'){
-
-  }else {
-
-  }
-}
-
 /**
  * 初始化存放数据的目录
  */
@@ -204,4 +183,15 @@ function getSlidingWindows(text:string, windowSize = 512, overlap = 100) {
         start += (windowSize - overlap);
     }
     return chunks;
+}
+
+/**
+ * 写文件
+ * @param filePath 
+ * @param content 
+ * @param encoding 
+ */
+export async function writeFileContent(filePath: string, content: string, encoding:string = 'utf8') {
+  const buf = iconv.encode(content, encoding);
+  await fs.promises.writeFile(filePath, buf);
 }

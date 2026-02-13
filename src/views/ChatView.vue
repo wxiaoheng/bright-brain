@@ -40,6 +40,14 @@
               </div>
             </div>
             <div class="message-text" v-html="renderMessage(message.content)"></div>
+
+            <div v-if="message.references && message.references.length > 0" class="message-references">
+              <div v-for="(ref, refIndex) in message.references" :key="refIndex" class="reference-item">
+                <span class="reference-source">来源: {{ ref.name || ref.source }}</span>
+                <span class="reference-text"> - {{ ref.text.slice(0, 20) }}...</span>
+              </div>
+            </div>
+
             <div class="message-time">{{ formatTime(message.timestamp) }}</div>
           </div>
         </div>
@@ -111,7 +119,7 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import SessionSidebar from '../components/SessionSidebar.vue'
-import { useCurrentSession, addMessage, clearCurrentSession, createSession } from '../services/useChatSessions'
+import { useCurrentSession, addMessage, createSession } from '../services/useChatSessions'
 import { renderMarkdown } from '../services/useMarkdown'
 import { initializeSessions } from '../services/useChatSessions'
 import type { Message, MessageAttachment } from '../types/chat'
@@ -217,7 +225,7 @@ const sendMessage = async () => {
     role: 'user',
     content: message || (hasFiles ? `[已上传 ${selectedFiles.value.length} 个文件]` : ''),
     timestamp: Date.now(),
-    attachments: attachments.length > 0 ? attachments : undefined
+    attachments: attachments.length > 0 ? attachments : undefined,
   })
 
   inputMessage.value = ''
@@ -280,6 +288,11 @@ onMounted(() => {
             }
           }
           if (data.done) {
+            const references = data.references;
+            if (references){
+              const questionMessage = session.messages[session.messages.length - 2];
+              questionMessage.references = references;
+            }
             isStreaming.value = false
           }
         }
@@ -805,6 +818,31 @@ watch(currentSession, async () => {
 }
 
 .chat-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.message-references {
+  margin-top: 8px;
+  padding-left: 16px;
+  border-left: 3px solid var(--accent-color);
+  background: var(--blockquote-bg);
+  border-radius: 4px;
+}
+
+.reference-item {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  display: flex;
+  gap: 8px;
+}
+
+.reference-source {
+  font-weight: bold;
+  color: var(--accent-color);
+}
+
+.reference-text {
   color: var(--text-secondary);
 }
 </style>
