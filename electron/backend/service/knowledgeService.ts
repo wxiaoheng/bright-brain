@@ -58,7 +58,7 @@ export async function initKnowledges(){
         new arrow.Field("created_at", new arrow.Timestamp(arrow.TimeUnit.MILLISECOND, null))
     ]);  
     table = await initVectorTable(vectorTableName, schema);
-    await table.createIndex("file_name", {config:lancedb.Index.fts()});
+    await table.createIndex("text", {config:lancedb.Index.fts()});
 }
 
 export function getKnowledges(){

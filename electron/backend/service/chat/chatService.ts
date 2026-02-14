@@ -3,7 +3,7 @@ import {ChatAlibabaTongyi} from "@langchain/community/chat_models/alibaba_tongyi
 import {ChatDeepSeek} from "@langchain/deepseek"
 import { ds, qw, zp } from "../../util/const";
 import { getModelSettings } from "../../service/settingService";
-import { MessagesAnnotation, StateGraph} from "@langchain/langgraph";
+import { Annotation, MessagesAnnotation, MessagesValue, StateGraph, StateSchema} from "@langchain/langgraph";
 import {SqliteSaver} from '@langchain/langgraph-checkpoint-sqlite';
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { getDb } from "../../service/dbService";
@@ -36,15 +36,26 @@ const getModel = ()=>{
   }
 }
 
+const ChatAnnotation = Annotation.Root({
+    ...MessagesAnnotation.spec,
+    // 原始问题
+    question:Annotation<string>,
+    // 图片等信息
+    attachMents:Annotation<string[]>,
+    // 引用资料
+    refContents: Annotation<any[]>,
+  });
+
 class ChatInstance{
 
     private app: any;
+    
 
     newChatClient(){
         // 定义图节点 (Node)
         // 这个函数接收当前状态，调用模型，并返回新的消息
         const model = getModel();
-        async function callModel(state:any) {
+        async function generate(state:any) {
             const messages = state.messages;
             const response = await model.invoke(messages);
             
@@ -52,71 +63,91 @@ class ChatInstance{
             return { messages: [response] };
         }
 
+        // 检索
+        async function retrieve(state: typeof ChatAnnotation.State) {
+            const question = state.question;
+            const  references:any[] = [];
+            // 从本地向量库中获取关联文档
+            const docs = await searchSimilarKnowledge(question as string, true);
+            if (docs.length>0){
+                docs.forEach(doc=>{
+                     references.push({source:doc.source, text:doc.text, name:doc.name});
+                });
+            }
+            return {refContents:references};
+        }
+
+        // 2. 增强,拼装prompt
+        async function augmented(state: typeof ChatAnnotation.State) {
+            const { question, attachMents, refContents } = state;
+            const content: any[] = [];
+            // 添加文本内容
+            content.push({
+                type: "text",
+                text: question
+            });
+
+            // 添加图片内容
+            if (attachMents?.length) {
+                for (const imagePath of attachMents) {
+                    try {
+                        // 检查文件是否存在
+                        if (fs.existsSync(imagePath)) {
+                            const base64DataUrl = fileToBase64(imagePath);
+                            content.push({
+                                type: "image_url",
+                                image_url: {
+                                    url: base64DataUrl
+                                }
+                            });
+                        } else {
+                            console.warn(`File not found: ${imagePath}`);
+                        }
+                    } catch (error) {
+                        console.error(`Error processing image ${imagePath}:`, error);
+                    }
+                }
+            }
+
+            const messages = [];
+
+            if (refContents?.length){
+                const systemContent = `可参考内容有：${refContents.map(ref=>ref.text).join('\n')}`;
+                messages.push(new SystemMessage(systemContent))
+            }
+
+            messages.push(new HumanMessage(content))
+
+            return { messages};
+        }
+
         // 构建图 (Graph)
-        // MessagesAnnotation 是 LangGraph 预设的状态定义，专门用于存储消息列表
-        const workflow = new StateGraph(MessagesAnnotation)
-            .addNode("chat", callModel) // 添加节点
-            .addEdge("__start__", "chat") // 定义开始指向 agent
-            .addEdge("chat", "__end__"); // agent 执行完后结束
+        const workflow = new StateGraph(ChatAnnotation)
+            .addNode('retrieve', retrieve)
+            .addNode('augmented', augmented)
+            .addNode('generate', generate) // 添加节点
+            .addEdge('__start__', 'retrieve') // 定义开始指向
+            .addEdge('retrieve', 'augmented')
+            .addEdge('augmented', 'generate')
+            .addEdge('generate', '__end__'); // 执行完后结束
 
         this.app = workflow.compile({checkpointer:new SqliteSaver(getDb())});
     };
 
     // 执行并实现打字机效果
     async streamingChat(question:string, imagePaths:string[], sessionId:string, reply:any) {
-        // 构建消息内容
-        const content: any[] = [];
-        // 添加文本内容
-        content.push({
-            type: "text",
-            text: question
-        });
-        // 添加图片内容
-        if (imagePaths?.length) {
-            for (const imagePath of imagePaths) {
-                try {
-                    // 检查文件是否存在
-                    if (fs.existsSync(imagePath)) {
-                        const base64DataUrl = fileToBase64(imagePath);
-                        content.push({
-                            type: "image_url",
-                            image_url: {
-                                url: base64DataUrl
-                            }
-                        });
-                    } else {
-                        console.warn(`File not found: ${imagePath}`);
-                    }
-                } catch (error) {
-                    console.error(`Error processing image ${imagePath}:`, error);
-                }
-            }
-        }
-        let input = [];
-        let references:any[] = [];
-        // 从本地向量库中获取关联文档
-        const docs = await searchSimilarKnowledge(question, true);
-        if (docs.length>0){
-            const refContent = docs.map((doc:any)=>{
-                const text = doc.text
-                references.push({source:doc.source, text, name:doc.name});
-                return text;
-            }).join('\n\n');
-            const systemContent = `可参考内容有：${refContent}`;
-            input.push(new SystemMessage(systemContent))
-        }
         
-        input.push(new HumanMessage(content))
         const config = { configurable: { thread_id: sessionId } };
         if (!this.app){
             this.newChatClient();
         }    
         const eventStream = this.app.streamEvents(
-            { messages: input }, 
+            { question, attachMents:imagePaths}, 
             { ...config, version: "v2" } 
         );
 
         let answer = '';
+        let references = [];
         // 遍历事件流
         for await (const event of eventStream) {
             const eventType = event.event;
@@ -134,8 +165,12 @@ class ChatInstance{
                     })
                     answer += chunk.content;
                 }
+            }else if (event.event === "on_chain_end" && event.name === "LangGraph") {
+                const state = event.data.output;
+                references = state.refContents;
             }
         }
+        
         console.log("\n\n[回答结束]");
         reply.send('chat:stream', {
             sessionId,
