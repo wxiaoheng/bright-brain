@@ -59,7 +59,7 @@ class embeddingService {
  * @param text 
  * @returns 
  */
-export async function getEmbedding(text: string): Promise<number[]> {
+export async function getVector(text: string): Promise<number[]> {
   const extractor = await embeddingService.getEmbedding();
   const safeText = text ? String(text).replace(/\n/g, ' ') : '';
   const output = await extractor(safeText, { pooling: 'cls', normalize: true });

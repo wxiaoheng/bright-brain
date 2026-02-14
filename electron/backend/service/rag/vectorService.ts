@@ -5,7 +5,7 @@ import { getAppPath } from '../../util/util';
 import { DATA_FOLDER, VECTOR_FOLDER } from '../../util/const';
 import { getChunk } from '../../service/knowledgeService';
 import { splitText } from './split/markdownSplitterService';
-import { filterResult, getEmbedding, rerank } from './embeddingService';
+import { filterResult, getVector, rerank } from './embeddingService';
 
 let db: lancedb.Connection | null = null;
 
@@ -43,7 +43,7 @@ export async function addDocument(table:lancedb.Table, text: string, metadata: a
   const datas: any[] = [];
   for (const doc of docs) {
     try {
-      const vector = await getEmbedding(doc.pageContent);
+      const vector = await getVector(doc.pageContent);
       datas.push({
         text: doc.pageContent,
         vector: vector,
@@ -72,11 +72,12 @@ export async function searchSimilar(table:lancedb.Table, queryText: string, limi
   const threshold = 0.01;
   try{
     // 1. 把问题变成向量
-    const queryVector = await getEmbedding(queryText);
+    const queryVector = await getVector(queryText);
 
     // 2. 搜索
-    const results = await table.search(queryVector)
+    const results = await table.query()
                               .fullTextSearch(queryText)
+                              .nearestTo(queryVector)
                               .limit(limit*4)
                               .toArray();
     const mapping = results.filter(item=>{
