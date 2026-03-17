@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify'
 
 // 配置 marked 选项
 marked.setOptions({
-  breaks: true,
+  breaks: false,
   gfm: true,
 })
 
@@ -12,7 +12,7 @@ export const renderMarkdown = (markdown: string): string => {
   try {
     const html = marked.parse(markdown) as string
     // 使用 DOMPurify 清理 HTML，防止 XSS 攻击
-    return DOMPurify.sanitize(html)
+    return DOMPurify.sanitize(html).replace(/>\n</g, '><').trim();
   } catch (error) {
     console.error('Markdown render error:', error)
     return markdown
@@ -23,7 +23,7 @@ export const renderMarkdown = (markdown: string): string => {
 export const renderInlineMarkdown = (markdown: string): string => {
   try {
     const html = marked.parseInline(markdown) as string
-    return DOMPurify.sanitize(html)
+    return DOMPurify.sanitize(html).replace(/>\n</g, '><').trim();
   } catch (error) {
     console.error('Inline markdown render error:', error)
     return markdown

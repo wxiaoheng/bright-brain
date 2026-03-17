@@ -27,10 +27,10 @@ export function getAppPath(){
   return appPath;
 }
 
-export function changeSettings(key:string, value:string){
+export async function changeSettings(key:string, value:string){
     try {
         if (key == SETTING_KEY_API_KEY || key == SETTING_KEY_MODEL || key === SETTING_KEY_MODEL_PROVIDER){
-            chat.newChatClient();
+           await chat.newChatClient();
         }
     } catch (error) {
         console.error(error);

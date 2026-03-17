@@ -2,12 +2,15 @@
 import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
 import { deleteKnowledge, getKnowledges, getKnowledgeWithSource, saveKnowledge } from '../service/knowledgeService';
 import {v4 as uuid} from 'uuid';
+import { getCommitSummary } from '../service/cli/cliService';
 
 const fastify = Fastify({ logger: true });
 
 export function initServer() {
   // 添加知识
   fastify.post('/api/knowledge/add', knowledgeAdd);
+
+  fastify.post('/api/git/summary', getCommitSummary);
 
   // 启动监听
   fastify.listen({ port: 3690, host: '127.0.0.1' }, (err, address) => {
@@ -17,7 +20,6 @@ export function initServer() {
     console.log(`Bright-Brain Internal Server running at ${address}`);
   });
 }
-
 
 export async function knowledgeAdd(request:FastifyRequest, reply:FastifyReply){
     // const { url, content } = request.body as { url: string, content: string };

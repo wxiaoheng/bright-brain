@@ -1,25 +1,38 @@
-import { ChatZhipuAI } from "@langchain/community/chat_models/zhipuai";
 import {ChatAlibabaTongyi} from "@langchain/community/chat_models/alibaba_tongyi"
 import {ChatDeepSeek} from "@langchain/deepseek"
-import { ds, qw, zp } from "../../util/const";
+import {ds, qw, zp } from "../../util/const";
 import { getModelSettings } from "../../service/settingService";
-import { Annotation, MessagesAnnotation, MessagesValue, StateGraph, StateSchema} from "@langchain/langgraph";
+import { Annotation, CompiledStateGraph, MessagesAnnotation, MessagesValue, StateGraph, StateSchema} from "@langchain/langgraph";
 import {SqliteSaver} from '@langchain/langgraph-checkpoint-sqlite';
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { getDb } from "../../service/dbService";
 import * as fs from 'fs';
-import { fileToBase64 } from "../../util/util";
+import { fileToBase64, getAppPath } from "../../util/util";
 import { searchSimilarKnowledge } from "../../service/knowledgeService";
+import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt"; 
+import { ChatOpenAI } from "@langchain/openai";
+import path from "path";
+import { allTools } from "../agent/mcpService";
+import { sessionExists } from "../messageService";
+import { threadId } from "worker_threads";
 
 
-const getModel = ()=>{
+export const getModel = ()=>{
   
   const {modelProvider, model, apiKey} = getModelSettings();
   
   if (modelProvider == zp){
-    return new ChatZhipuAI({
-      model: model,//"glm-4.7-flashx", // Available models:
-      zhipuAIApiKey: apiKey, 
+    // ChatZhipuAI调用tool时有兼容问题，改成使用ChatOpenAI
+    // return new ChatZhipuAI({
+    //   model: model,//"glm-4.7-flashx", // Available models:
+    //   zhipuAIApiKey: apiKey, 
+    // });
+    return new ChatOpenAI({
+      modelName: model, 
+      apiKey: apiKey, 
+      configuration: {
+        baseURL: "https://open.bigmodel.cn/api/paas/v4/", // 智谱的 OpenAI 兼容地址
+      }
     });
   }else if (modelProvider == qw){
     return new ChatAlibabaTongyi({
@@ -38,48 +51,38 @@ const getModel = ()=>{
 
 const ChatAnnotation = Annotation.Root({
     ...MessagesAnnotation.spec,
+    // sessionid
+    sessionId:Annotation<string>,
     // 原始问题
     question:Annotation<string>,
     // 图片等信息
     attachMents:Annotation<string[]>,
-    // 引用资料
-    refContents: Annotation<any[]>,
   });
+
 
 class ChatInstance{
 
     private app: any;
     
 
-    newChatClient(){
+    async newChatClient(){
         // 定义图节点 (Node)
         // 这个函数接收当前状态，调用模型，并返回新的消息
-        const model = getModel();
+        const tools = allTools();
+        const model = getModel().bindTools(tools);
         async function generate(state:any) {
-            const messages = state.messages;
-            const response = await model.invoke(messages);
+            const messages:BaseMessage[] = state.messages;
+            console.log("Sending messages to model:", messages.map(m => m._getType()));
             
+            const response = await model.invoke(messages);
             // LangGraph 会自动将返回的消息追加到历史记录中
             return { messages: [response] };
         }
 
-        // 检索
-        async function retrieve(state: typeof ChatAnnotation.State) {
-            const question = state.question;
-            const  references:any[] = [];
-            // 从本地向量库中获取关联文档
-            const docs = await searchSimilarKnowledge(question as string, true);
-            if (docs.length>0){
-                docs.forEach(doc=>{
-                     references.push({source:doc.source, text:doc.text, name:doc.name});
-                });
-            }
-            return {refContents:references};
-        }
 
-        // 2. 增强,拼装prompt
+        // 2. 拼装prompt
         async function augmented(state: typeof ChatAnnotation.State) {
-            const { question, attachMents, refContents } = state;
+            const { question, attachMents, sessionId } = state;
             const content: any[] = [];
             // 添加文本内容
             content.push({
@@ -109,10 +112,15 @@ class ChatInstance{
                 }
             }
 
-            const messages = [];
+            const messages:BaseMessage[] = [];
 
-            if (refContents?.length){
-                const systemContent = `可参考内容有：${refContents.map(ref=>ref.text).join('\n')}`;
+            if (!sessionExists(sessionId)){
+                const systemContent = `你是一个专属个人助理，你已连接到用户的个人知识库。
+【严格指令】：
+1. 遇到与用户个人相关或现实中你暂不了解的问题（如“我的工作”、“我的计划”、“昨天世界杯冠军”等），**绝对不允许**回答“我无法查询”、“我没有你的个人数据”、“我作为一个AI不知道”。
+2. 遇到上述情况，你**必须且只能**调用 \`search_local_knowledge\` 工具去获取信息。
+3. 你了解的问题则**无需**调用该工具
+4. 只有当工具返回“找不到信息”时，你才可以告诉用户无法回答该问题。` ;
                 messages.push(new SystemMessage(systemContent))
             }
 
@@ -123,13 +131,13 @@ class ChatInstance{
 
         // 构建图 (Graph)
         const workflow = new StateGraph(ChatAnnotation)
-            .addNode('retrieve', retrieve)
             .addNode('augmented', augmented)
             .addNode('generate', generate) // 添加节点
-            .addEdge('__start__', 'retrieve') // 定义开始指向
-            .addEdge('retrieve', 'augmented')
+            .addNode('tools', new ToolNode(allTools())) 
+            .addEdge('__start__', 'augmented') // 定义开始指向
             .addEdge('augmented', 'generate')
-            .addEdge('generate', '__end__'); // 执行完后结束
+            .addConditionalEdges('generate', toolsCondition)
+            .addEdge('tools', 'generate');
 
         this.app = workflow.compile({checkpointer:new SqliteSaver(getDb())});
     };
@@ -139,10 +147,10 @@ class ChatInstance{
         
         const config = { configurable: { thread_id: sessionId } };
         if (!this.app){
-            this.newChatClient();
+            await this.newChatClient();
         }    
         const eventStream = this.app.streamEvents(
-            { question, attachMents:imagePaths}, 
+            { question, attachMents:imagePaths, sessionId}, 
             { ...config, version: "v2" } 
         );
 
@@ -168,6 +176,8 @@ class ChatInstance{
             }else if (event.event === "on_chain_end" && event.name === "LangGraph") {
                 const state = event.data.output;
                 references = state.refContents;
+            }else if (eventType === 'on_tool_start' || eventType === 'on_tool_end'){
+                console.log('工具', event);
             }
         }
         
@@ -178,6 +188,46 @@ class ChatInstance{
             done: true,
         })
         return {references, answer};
+    }
+
+    // 一般简单对话
+    async newSimpleClient(tools){
+        // 定义图节点 (Node)
+        // 这个函数接收当前状态，调用模型，并返回新的消息
+        const model = getModel().bindTools(tools);
+        async function generate(state:any) {
+            const messages:BaseMessage[] = state.messages;
+            const response = await model.invoke(messages);
+            // LangGraph 会自动将返回的消息追加到历史记录中
+            return { messages: [response] };
+        }
+
+        // 构建图 (Graph)
+        const workflow = new StateGraph(MessagesAnnotation)
+            .addNode('generate', generate) // 添加节点
+            .addNode('tools', new ToolNode(tools)) 
+            .addEdge('__start__', 'generate') // 定义开始指向
+            .addConditionalEdges('generate', toolsCondition)
+            .addEdge('tools', 'generate');
+
+        return workflow.compile({checkpointer:new SqliteSaver(getDb())});
+    };
+
+    // 执行对话
+    async simpleChat(question:string, systemPrompt:string, sessionId:string, tools:any[]) {
+        const app = await this.newSimpleClient(tools);
+        if (!app){
+            throw new Error(`agent初始化失败,app不能为空`);
+        }
+        const config = { configurable: { thread_id: sessionId } };
+        const messages = [];
+        if (!sessionExists(sessionId) && systemPrompt?.length){
+            messages.push(new SystemMessage(systemPrompt));
+        }
+        messages.push(new HumanMessage(question));
+        const final = await app.invoke({messages}, config);
+        const finalMessages = final.messages;
+        return finalMessages[finalMessages.length-1].content as string;
     }
 }
 

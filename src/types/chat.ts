@@ -11,7 +11,7 @@ export interface ReferenceContent{
 }
 
 export interface Message {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool'
   content: string
   timestamp: number
   attachments?: MessageAttachment[]

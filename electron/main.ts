@@ -9,6 +9,7 @@ import { deleteSession, getMessages, getSessions, initMessages, saveMessages, sa
 import { deleteKnowledge, getKnowledges, initKnowledges, saveKnowledge, searchSimilarKnowledge } from './backend/service/knowledgeService';
 import { chat } from './backend/service/chat/chatService';
 import { initServer } from './backend/server/server';
+import { initMcpServer } from './backend/service/agent/mcpService';
 
 let mainWindow: BrowserWindow | null = null
 
@@ -57,7 +58,7 @@ function createWindow() {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
 
   initLocalFolders();
 
@@ -67,6 +68,8 @@ app.whenReady().then(() => {
   initMessages();
   initKnowledges();
 
+  initMcpServer();
+
   initServer();
 
   // IPC Handlers
@@ -75,10 +78,6 @@ app.whenReady().then(() => {
     const reply = event.sender as any
     if (!sessionId){
       sessionId = uuid();
-    }
-    if (!sessionExists(sessionId)){
-      const title = message.length>30 ? message.substring(0, 30) : message || (filePaths && filePaths.length > 0 ? `[已上传 ${filePaths.length} 个文件]` : '新对话')
-      saveSessions(sessionId, title);
     }
     try {
       const {answer, references} = await chat.streamingChat(message, filePaths || [], sessionId, reply);
@@ -93,6 +92,12 @@ app.whenReady().then(() => {
         })
         attachments = JSON.stringify(datas);
       }
+
+      if (!sessionExists(sessionId)){
+        const title = message.length>30 ? message.substring(0, 30) : message || (filePaths && filePaths.length > 0 ? `[已上传 ${filePaths.length} 个文件]` : '新对话')
+        saveSessions(sessionId, title);
+      }
+
       saveMessages(sessionId, 'user', message, attachments, JSON.stringify(references))
       saveMessages(sessionId, 'assistant',answer, '', '')
       updateSessionTime(sessionId);
@@ -144,7 +149,7 @@ app.whenReady().then(() => {
   ipcMain.handle('settings:save', async (_event, key:string, value:any) => {
     try {
       saveSetting(key, value);
-      changeSettings(key, value);
+      await changeSettings(key, value);
       return { success: true }
     } catch (error) {
       console.error('Settings save error:', error)

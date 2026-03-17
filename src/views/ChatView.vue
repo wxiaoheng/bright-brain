@@ -136,7 +136,8 @@ let streamListener: ((event: any, data: any) => void) | null = null
 const initMessage = "正在思考..."
 
 const renderMessage = (content: string) => {
-  return renderMarkdown(content)
+  const md = renderMarkdown(content)
+  return md;
 }
 
 const loadAttachmentPreview = async (filePath: string) => {
@@ -334,40 +335,31 @@ watch(currentSession, async () => {
   background: var(--bg-primary);
 }
 
+/* 固定 SessionSidebar 宽度 */
+.chat-wrapper > :first-child {
+  width: 300px;
+  min-width: 300px;
+  max-width: 300px;
+  flex-shrink: 0;
+}
+
 .chat-container {
   flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
-}
-
-.chat-header {
-  padding: 20px 24px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: background 0.3s, border-color 0.3s;
-}
-
-.chat-header h2 {
-  font-size: 20px;
-  color: var(--text-primary);
-  font-weight: 600;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0; /* 防止内容撑开父容器 */
 }
 
 .messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: auto; /* 横向滚动条 */
   padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-width: 100%; /* 防止内容溢出 */
 }
 
 .message {
@@ -408,7 +400,9 @@ watch(currentSession, async () => {
 }
 
 .message-content {
-  max-width: 70%;
+  max-width: 70vw; /* 限制消息最大宽度，防止撑开 */
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 
 .message.user .message-content {
@@ -811,6 +805,9 @@ watch(currentSession, async () => {
   max-height: 150px;
   transition: border-color 0.2s, background 0.3s;
   font-family: inherit;
+  overflow-x: hidden; /* 禁止横向滚动条 */
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 
 .chat-input:focus {
