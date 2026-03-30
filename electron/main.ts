@@ -6,10 +6,11 @@ import { changeSettings, constructFileData, getLocalImagePath, fileToBase64, sav
 import { fileURLToPath } from 'url'
 import { getAllSettings, initSettings, saveSetting } from './backend/service/settingService';
 import { deleteSession, getMessages, getSessions, initMessages, saveMessages, saveSessions, sessionExists, updateSessionTime } from './backend/service/messageService';
-import { deleteKnowledge, getKnowledges, initKnowledges, saveKnowledge, searchSimilarKnowledge } from './backend/service/knowledgeService';
+import { deleteKnowledge, getKnowledges, getKnowledgeWithSource, initKnowledges, saveKnowledge, searchSimilarKnowledge } from './backend/service/knowledgeService';
 import { chat } from './backend/service/chat/chatService';
 import { initServer } from './backend/server/server';
 import { initMcpServer } from './backend/service/agent/mcpService';
+import { readdirSync } from 'fs';
 
 let mainWindow: BrowserWindow | null = null
 
@@ -256,18 +257,14 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('knowledge:add', async (_event, item: { type: 'file' | 'directory' | 'url'; source: string; name?: string; id?:string }) => {
     try {
-      const oldId = item.id;
-      const id = uuid();
-      if (oldId){
-        await deleteKnowledge(oldId);
-      }
-      await saveKnowledge(id, item.type, item.source, item.name);
+      addKnowledge(item);
       return { success: true }
     } catch (error) {
       console.error('knowledge add error:', error)
       return { success: false }
     }
   })
+  
 
   ipcMain.handle('knowledge:remove', async (_event, id: string) => {
     try {
@@ -297,3 +294,35 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
+
+
+function addKnowledge( item: { type: 'file' | 'directory' | 'url'; source: string; name?: string; id?:string }){
+  if (item.type === 'directory'){
+    const files = readdirSync(item.source, { withFileTypes: true})
+    for (const file of files) {
+      if (file.isFile() && file.name.endsWith('.md')){
+        const res = path.resolve(item.source, file.name);
+        addSingleKnowledge({type:'file', source:res, name:file.name});
+      }
+    }
+    console.log(`添加目录${item.source}完成！`)
+  }else {
+    addSingleKnowledge(item);
+  }
+}
+
+async function addSingleKnowledge( item: { type: 'file' | 'directory' | 'url'; source: string; name?: string; id?:string }){
+    let oldId = item.id;
+    if (!oldId){
+      const kn = getKnowledgeWithSource(item.source);
+      if (kn){
+        oldId = kn.id;
+      }
+    }
+    const id = uuid();
+    if (oldId){
+      await deleteKnowledge(oldId);
+    }
+    await saveKnowledge(id, item.type, item.source, item.name);
+    console.log(`添加知识${item.source}成功`)
+}

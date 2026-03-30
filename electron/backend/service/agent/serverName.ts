@@ -8,4 +8,6 @@ export enum serverName{
     CMD_SERVER = 'cmd-server',
 
     LOCAL_KNOWLEDGE_SERVER = 'local-knowledge-server',
+
+    SKILL_SERVER = 'skill-server',
 }

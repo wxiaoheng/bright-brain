@@ -10,6 +10,7 @@
         <div v-if="addDropdownOpen" class="dropdown-menu">
           <button type="button" class="dropdown-item" @click="onAddFile">选择文件</button>
           <button type="button" class="dropdown-item" @click="openUrlModal">添加 URL</button>
+          <button type="button" class="dropdown-item" @click="onAddDirectory">选择目录</button>
         </div>
       </div>
     </div>

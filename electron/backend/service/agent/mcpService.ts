@@ -7,9 +7,13 @@ import * as z from "zod";
 // import { all, findSkill, getSkillsInfo, initSkill } from "./skillService";
 import { pathToFileURL } from "url"
 import path from "path";
-import { getFilesRecursive } from "../../util/fileutil";
+import { getFilesRecursive, readText } from "../../util/fileutil";
 import { searchSimilarKnowledge } from "../knowledgeService";
 import { serverName } from "./serverName";
+import { all, findSkill, getSkillsInfo, initSkill } from "./skillService";
+import { getAppPath } from "../../util/util";
+import { DATA_FOLDER, MCP_CONFIG_NAME } from "../../util/const";
+import * as fs from "fs";
 
 let clients: Map<string, Client> = new Map();
 let toolMap: Map<string, any[]> = new Map();
@@ -18,10 +22,14 @@ let toolMap: Map<string, any[]> = new Map();
 
 export async function initMcpServer() {
   
-  clients.set(serverName.GIT_SERVER,  await connectGitClient());
-  clients.set(serverName.DEVOPS_SERVER, await connectDevopsClient());
-  clients.set(serverName.AMAP_SERVER, await createAMapClient());
-  clients.set(serverName.CMD_SERVER, await connectCmdClient());
+  const file = path.join(getAppPath(), DATA_FOLDER, MCP_CONFIG_NAME);
+  try{
+    if (fs.promises.access(file)){
+      await loadMcpConfigs(file);
+    }
+  }catch(err){
+    console.log(`mcp server配置文件不存在`);
+  }
 
   for (const entry of clients){
     const key = entry[0];
@@ -39,8 +47,81 @@ export async function initMcpServer() {
     });
     toolMap.set(key, tools);
   }
+  // 本地知识库工具
   const knowledgeTool = await initLocalKnowledgeTool();
   toolMap.set(serverName.LOCAL_KNOWLEDGE_SERVER, [knowledgeTool])
+
+  // skill工具
+  initSkill().then(()=>{
+    toolMap.set(serverName.SKILL_SERVER, [initSkillTool()]);
+  })
+}
+
+/**
+ * 加载标准的claude的mcp json文件，
+ {
+  "mcpServers": {
+    "git-server": {
+      "command": "uvx",
+      "args": ["mcp-server-git"]
+    }
+  }
+ **/
+async function loadMcpConfigs(file:string){
+  const content = await readText(file);
+  const config = JSON.parse(content);
+  const servers = config.mcpServers;
+  const serverNames = Object.keys(servers);
+  for (const serverName of serverNames){
+    const serverConfig = servers[serverName];
+    if (!serverConfig) {
+        console.error(`错误: 在配置中找不到服务器 "${serverName}"`);
+        return;
+    }
+    const url = serverConfig.url;
+    try{
+      if (url){
+        await loadHttpMcpServer(serverName, serverConfig);
+      }else{
+        const command = serverConfig.command;
+        if (command){
+          await loadStdioMcpServer(serverName, serverConfig);
+        }
+      }
+    }catch(err){
+      console.error(`错误：加载服务器${serverName}失败`, err);
+    }
+    
+  }
+}
+
+async function loadStdioMcpServer(name:string, serverConfig:any){
+  const command = serverConfig.command;
+  const transport = new StdioClientTransport({
+        command,
+        args: serverConfig.args,
+    });
+
+    const client = new Client({ name, version: "1.0" }, { capabilities: {} });
+    await client.connect(transport);
+    clients.set(name,  client);
+}
+
+async function loadHttpMcpServer(name:string, serverConfig:any){
+  const url = serverConfig.url;
+  let headers = serverConfig.headers;
+  if (!headers){
+    headers = {};
+  }
+  const transport = new StreamableHTTPClientTransport(
+        new URL(url), 
+        {
+          requestInit:{headers}
+        }
+    )
+    const client = new Client({ name, version: "1.0" }, { capabilities: {} });
+    await client.connect(transport);
+    clients.set(name,  client);
 }
 
 export async function getTools(clientNames:string[]){
@@ -56,6 +137,48 @@ export async function getTools(clientNames:string[]){
 
 export function allTools() {
     return Array.from(toolMap.values()).flat();
+}
+
+function initSkillTool() {
+  const allSkills = all();
+  const info = getSkillsInfo(allSkills);
+  return tool((input) => {
+      const skill = findSkill(input.skillName);
+      if (!skill) {
+        const available = allSkills.map(s=>s.name).join(', ');
+        throw new Error(`Skill "${input.skillName}" not found. Available skills: ${available || "none"}`)
+      }
+      const dir = path.dirname(skill.location)
+      const base = pathToFileURL(dir).href
+      const files = getFilesRecursive(dir, [], ['SKILL.md'], 10)
+     return {
+        title: `Loaded skill: ${skill.name}`,
+        output: [
+          `<skill_content name="${skill.name}">`,
+          `# Skill: ${skill.name}`,
+          "",
+          skill.content.trim(),
+          "",
+          `Base directory for this skill: ${base}`,
+          "Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",
+          "Note: file list is sampled.",
+          "",
+          "<skill_files>",
+          files,
+          "</skill_files>",
+          "</skill_content>",
+        ].join("\n"),
+        metadata: {
+          name: skill.name,
+          dir,
+        },
+      }
+  }, {
+    name: "skill",
+    description: info.description,
+    schema: z.object({ skillName: z.string().describe(`The name of the skill from available_skills${info.hint}`) }),
+  });
+  
 }
 
 async function initLocalKnowledgeTool() {
@@ -80,59 +203,6 @@ async function initLocalKnowledgeTool() {
     schema: z.object({ question: z.string().describe(`The user question`) }),
   });
 }
-
-async function connectCmdClient() {
-    const transport = new StdioClientTransport({
-        command: "npx",
-        args: ["-y", "@simonb97/server-win-cli"],
-    });
-
-    const client = new Client({ name: serverName.CMD_SERVER, version: "1.0" }, { capabilities: {} });
-    await client.connect(transport);
-    return client;
-}
-
-
-async function connectGitClient() {
-    const transport = new StdioClientTransport({
-        command: "uvx",
-        args: ["mcp-server-git"],
-    });
-
-    const dbClient = new Client({ name: serverName.GIT_SERVER, version: "1.0" }, { capabilities: {} });
-    await dbClient.connect(transport);
-    return dbClient;
-}
-
-async function createAMapClient(){
-  // https://mcp.amap.com/sse
-   const transport = new StreamableHTTPClientTransport(
-        new URL('https://mcp.amap.com/mcp?key=xxxxx')
-    )
-
-    const client = new Client({ name: serverName.AMAP_SERVER, version: "1.0" }, { capabilities: {} });
-    await client.connect(transport);
-    return client;
-}
-
-
-async function connectDevopsClient() {
-    const transport = new StreamableHTTPClientTransport(
-        new URL('https://dev.xxx.com/openapi/apis/v1/mcp'), 
-        {
-          requestInit:{
-            headers:{
-              devops_access_key:'xxxx'
-            }
-          }
-        }
-    )
-
-    const client = new Client({ name: serverName.DEVOPS_SERVER, version: "1.0" }, { capabilities: {} });
-    await client.connect(transport);
-    return client;
-}
-
 
 // 递归清理带有问题的 enum 属性
 const cleanMcpSchema = (schema: any): any => {

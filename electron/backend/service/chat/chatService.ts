@@ -72,7 +72,7 @@ class ChatInstance{
         const model = getModel().bindTools(tools);
         async function generate(state:any) {
             const messages:BaseMessage[] = state.messages;
-            console.log("Sending messages to model:", messages.map(m => m._getType()));
+            console.log("Sending messages to model:", messages);
             
             const response = await model.invoke(messages);
             // LangGraph 会自动将返回的消息追加到历史记录中

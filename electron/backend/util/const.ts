@@ -13,3 +13,5 @@ export const FILES_FOLDER = 'files';
 export const IMAGES_FOLDER = 'images';
 export const DB_FOLDER = 'db';
 export const VECTOR_FOLDER = 'vector-store';
+
+export const MCP_CONFIG_NAME = 'mcp_config.json';
